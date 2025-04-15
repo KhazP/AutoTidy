@@ -1,4 +1,4 @@
-![AutoTidy Icon](autotidyicon.png)
+<img src="autotidyicon.png" alt="AutoTidy Icon" width="64"/>
 
 # AutoTidy
 
