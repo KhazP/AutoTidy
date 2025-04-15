@@ -1,4 +1,3 @@
-
 import threading
 import time
 import queue
@@ -29,12 +28,15 @@ class MonitoringWorker(threading.Thread):
         self.log_queue.put("STATUS: Running")
 
         while not self._stop_event.is_set():
-            config = self.config_manager.get_config()
-            if not config:
+            # Get the list of folders specifically
+            folders_to_monitor = self.config_manager.get_monitored_folders()
+
+            if not folders_to_monitor:
                 self.log_queue.put("INFO: No folders configured for monitoring.")
             else:
-                self.log_queue.put(f"INFO: Starting scan of {len(config)} configured folder(s)...")
-                for folder_config in config:
+                self.log_queue.put(f"INFO: Starting scan of {len(folders_to_monitor)} configured folder(s)...")
+                # Iterate over the list of folder configurations
+                for folder_config in folders_to_monitor:
                     if self._stop_event.is_set():
                         break # Exit loop if stopped during scan
 
