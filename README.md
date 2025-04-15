@@ -1,3 +1,5 @@
+![AutoTidy Icon](autotidyicon.png)
+
 # AutoTidy
 
 AutoTidy is a desktop utility designed to automatically organize cluttered folders like Downloads, Screenshots or Desktop based on user-defined rules.
