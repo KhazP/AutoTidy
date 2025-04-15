@@ -1,0 +1,30 @@
+# PyInstaller files
+*.spec
+build/
+dist/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Environment folders
+.env
+.venv
+venv/
+ENV/
+env/
+
+# Project Documentation/Notes (if not intended for repo)
+NOTES.md
+PRD-MVP.txt
+Tech-Design-MVP.txt
+
+# IDE specific
+.vscode/
+.idea/
+
+# OS specific
+.DS_Store
+Thumbs.db

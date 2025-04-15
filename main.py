@@ -11,8 +11,17 @@ from config_manager import ConfigManager
 from ui_config_window import ConfigWindow
 # Worker is implicitly used by ConfigWindow's start/stop actions
 
+# Determine the base path (directory of the script)
+if getattr(sys, 'frozen', False):
+    # If run as a bundled executable (PyInstaller)
+    base_path = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
+else:
+    # If run as a normal script
+    base_path = os.path.dirname(os.path.abspath(__file__))
+
 APP_NAME = "AutoTidy"
-ICON_PATH = "c:\\Users\\alpya\\Documents\\GitHub\\AutoTidy\\autotidyicon.png" # Use absolute path
+ICON_NAME = "autotidyicon.png"
+ICON_PATH = os.path.join(base_path, ICON_NAME) # Construct path relative to base
 
 class AutoTidyApp(QApplication):
     """Main application class managing tray icon and window."""
