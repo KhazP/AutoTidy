@@ -1,4 +1,4 @@
-<img src="autotidyicon.png" alt="AutoTidy Icon" width="64"/>
+<img src="autotidyicon.ico" alt="AutoTidy Icon" width="64"/>
 
 # AutoTidy
 

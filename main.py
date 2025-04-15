@@ -20,7 +20,7 @@ else:
     # If run as a normal script
     base_path = os.path.dirname(os.path.abspath(__file__))
 
-ICON_NAME = "autotidyicon.png"
+ICON_NAME = "autotidyicon.ico"
 ICON_PATH = os.path.join(base_path, ICON_NAME) # Construct path relative to base
 
 class AutoTidyApp(QApplication):
