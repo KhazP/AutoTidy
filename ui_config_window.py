@@ -8,6 +8,7 @@ from PyQt6.QtCore import QTimer, Qt, pyqtSlot
 
 from config_manager import ConfigManager
 from worker import MonitoringWorker
+from ui_settings_dialog import SettingsDialog # Import the new dialog
 
 LOG_QUEUE_CHECK_INTERVAL_MS = 250
 
@@ -39,6 +40,11 @@ class ConfigWindow(QWidget):
         top_controls_layout.addWidget(self.add_folder_button)
         top_controls_layout.addWidget(self.remove_folder_button)
         top_controls_layout.addStretch()
+        # --- Add Settings Button ---
+        self.settings_button = QPushButton("Settings")
+        # Optionally add an icon: self.settings_button.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogDetailedView))
+        top_controls_layout.addWidget(self.settings_button)
+        # -------------------------
         main_layout.addLayout(top_controls_layout)
 
         # --- Folder List ---
@@ -88,12 +94,14 @@ class ConfigWindow(QWidget):
         self.pattern_lineedit.editingFinished.connect(self.save_rule_changes) # Save when focus lost or Enter pressed
         self.start_button.clicked.connect(self.start_monitoring)
         self.stop_button.clicked.connect(self.stop_monitoring)
+        self.settings_button.clicked.connect(self.open_settings_dialog) # Connect settings button
 
     def _load_initial_config(self):
         """Load existing configuration into the UI."""
-        config = self.config_manager.get_config()
+        # Config is now a dict, get folders list
+        folders = self.config_manager.get_monitored_folders()
         self.folder_list_widget.clear()
-        for item in config:
+        for item in folders:
             path = item.get('path')
             if path:
                 list_item = QListWidgetItem(path)
@@ -192,6 +200,11 @@ class ConfigWindow(QWidget):
                  # Should not happen if item exists
                  self.log_queue.put(f"ERROR: Failed to update rules for {path} (not found in config?)")
 
+    @pyqtSlot()
+    def open_settings_dialog(self):
+        """Open the settings dialog window."""
+        dialog = SettingsDialog(self.config_manager, self) # Pass config manager and parent
+        dialog.exec() # Show the dialog modally
 
     @pyqtSlot()
     def start_monitoring(self):

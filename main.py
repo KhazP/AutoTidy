@@ -9,6 +9,7 @@ from PyQt6.QtCore import pyqtSlot
 # Import local modules
 from config_manager import ConfigManager
 from ui_config_window import ConfigWindow
+from constants import APP_NAME # Import from constants
 # Worker is implicitly used by ConfigWindow's start/stop actions
 
 # Determine the base path (directory of the script)
@@ -19,21 +20,17 @@ else:
     # If run as a normal script
     base_path = os.path.dirname(os.path.abspath(__file__))
 
-APP_NAME = "AutoTidy"
 ICON_NAME = "autotidyicon.png"
 ICON_PATH = os.path.join(base_path, ICON_NAME) # Construct path relative to base
 
 class AutoTidyApp(QApplication):
-    """Main application class managing tray icon and window."""
+    """Main application class managing the system tray icon and windows."""
 
     def __init__(self, argv):
         super().__init__(argv)
+        self.setQuitOnLastWindowClosed(False) # Keep running in tray
 
-        # Prevent quitting when the last window is closed
-        self.setQuitOnLastWindowClosed(False)
-
-        # Application Setup
-        self.config_manager = ConfigManager()
+        self.config_manager = ConfigManager(APP_NAME) # Pass APP_NAME here
         self.log_queue = queue.Queue()
 
         # Create UI (initially hidden)
@@ -48,7 +45,8 @@ class AutoTidyApp(QApplication):
             print(f"Warning: Icon file not found at {ICON_PATH}", file=sys.stderr)
             # Optionally set a default Qt icon if desired
             # self.tray_icon.setIcon(QApplication.style().standardIcon(QStyle.StandardPixmap.SP_ComputerIcon))
-        self.tray_icon.setToolTip(APP_NAME)
+        self.tray_icon.setToolTip(f"{APP_NAME} is running")
+        self.tray_icon.show()
 
         # Create Tray Menu
         self.tray_menu = QMenu()
@@ -74,7 +72,6 @@ class AutoTidyApp(QApplication):
         self.tray_icon.activated.connect(self.on_tray_activated)
 
         # Show Tray Icon
-        self.tray_icon.show()
         self.log_queue.put(f"INFO: {APP_NAME} started. Running in system tray.")
         self.log_queue.put("STATUS: Stopped") # Initial status
 
@@ -117,5 +114,6 @@ class AutoTidyApp(QApplication):
 
 
 if __name__ == "__main__":
+    # Ensure APP_NAME is used for ConfigManager initialization
     app = AutoTidyApp(sys.argv)
     sys.exit(app.exec())
