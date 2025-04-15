@@ -18,8 +18,9 @@ env/
 
 # Project Documentation/Notes (if not intended for repo)
 NOTES.md
-PRD-MVP.txt
-Tech-Design-MVP.txt
+PRD-MVP.md
+Tech-Design-MVP.md
+Deep-Research-Summary.md
 
 # IDE specific
 .vscode/
