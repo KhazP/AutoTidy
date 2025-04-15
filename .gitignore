@@ -25,6 +25,7 @@ Deep-Research-Summary.md
 # IDE specific
 .vscode/
 .idea/
+autotidy_setup.iss
 
 # OS specific
 .DS_Store
