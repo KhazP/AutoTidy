@@ -1,12 +1,12 @@
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QCheckBox, QPushButton, QDialogButtonBox,
-    QWidget, QMessageBox
+    QWidget, QMessageBox, QLabel # Added QLabel
 )
 from PyQt6.QtCore import pyqtSlot
 
 from config_manager import ConfigManager
 from startup_manager import set_autostart
-from constants import APP_NAME # Import from constants
+from constants import APP_NAME, APP_VERSION # Import APP_VERSION
 
 class SettingsDialog(QDialog):
     """Dialog window for application settings."""
@@ -29,6 +29,14 @@ class SettingsDialog(QDialog):
         self.autostart_checkbox = QCheckBox("Start AutoTidy automatically on system login")
         self.autostart_checkbox.setChecked(self.initial_start_on_login)
         layout.addWidget(self.autostart_checkbox)
+
+        # --- Version Label ---
+        version_label = QLabel(f"Version: {APP_VERSION}")
+        version_label.setStyleSheet("color: grey;") # Optional: Make it less prominent
+        layout.addWidget(version_label)
+        # ---------------------
+
+        layout.addStretch() # Add some space before buttons
 
         # --- Dialog Buttons (OK/Cancel) ---
         button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
