@@ -9,20 +9,9 @@ from startup_manager import set_autostart
 from constants import APP_NAME, APP_VERSION # Import APP_VERSION
 
 class SettingsDialog(QDialog):
-    """
-    A dialog window for configuring application-wide settings.
-    This includes options for automatic startup, dry run mode, scheduling parameters
-    for folder monitoring, and the template for archive paths.
-    """
+    """Dialog window for application settings."""
 
     def __init__(self, config_manager: ConfigManager, parent: QWidget | None = None):
-        """
-        Initializes the SettingsDialog.
-
-        Args:
-            config_manager: An instance of ConfigManager for loading and saving settings.
-            parent: The parent widget, if any.
-        """
         super().__init__(parent)
         self.config_manager = config_manager
         self.initial_start_on_login = self.config_manager.get_setting("start_on_login", False)
@@ -37,11 +26,7 @@ class SettingsDialog(QDialog):
         self._init_ui()
 
     def _init_ui(self):
-        """
-        Initializes and arranges all UI elements within the dialog.
-        This includes checkboxes for autostart and dry run mode, input fields
-        for scheduling, archive path template, and dialog action buttons.
-        """
+        """Initialize UI elements and layout."""
         layout = QVBoxLayout(self)
 
         # --- Autostart Checkbox ---
@@ -120,15 +105,7 @@ class SettingsDialog(QDialog):
 
     @pyqtSlot()
     def accept(self):
-        """
-        Handles the 'OK' button click.
-        It retrieves current values from the UI fields, compares them with initial
-        settings, and if changes are detected, updates the configuration via
-        ConfigManager. For the 'start_on_login' setting, it also attempts to
-        apply the change to the system's autostart configuration.
-        Finally, it saves the overall configuration and closes the dialog with
-        an 'Accepted' status.
-        """
+        """Handle OK button click: save settings and apply autostart."""
         settings_changed = False
         new_start_on_login = self.autostart_checkbox.isChecked()
         # new_check_interval = self.interval_spinbox.value() # Old setting

@@ -11,26 +11,11 @@ from datetime import datetime
 # from config_manager import ConfigManager
 
 class UndoDialog(QDialog):
-    """
-    A dialog for viewing and undoing file operations performed by AutoTidy.
-    It lists batches of operations (runs) and the individual actions within them.
-    Users can choose to undo an entire batch or a single selected action.
-    """
     # Define a custom role for storing full action data or run_id
     RunIdRole = Qt.ItemDataRole.UserRole + 1
     ActionDataRole = Qt.ItemDataRole.UserRole + 2
 
     def __init__(self, undo_manager, config_manager, parent=None):
-        """
-        Initializes the UndoDialog.
-
-        Args:
-            undo_manager: An instance of UndoManager to handle the logic of
-                          fetching history and performing undo operations.
-            config_manager: An instance of ConfigManager (currently unused but
-                            kept for potential future needs like accessing paths).
-            parent: The parent widget, if any.
-        """
         super().__init__(parent)
         self.undo_manager = undo_manager
         self.config_manager = config_manager # Though not directly used in this snippet yet
@@ -105,23 +90,12 @@ class UndoDialog(QDialog):
         # --- Initial state ---
         self.populate_runs_list() # Load data
 
-    def _log_message(self, message: str):
-        """
-        Appends a timestamped message to the status log QTextEdit.
-
-        Args:
-            message: The string message to log.
-        """
+    def _log_message(self, message):
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self.status_log.append(f"[{timestamp}] {message}")
 
     @pyqtSlot()
     def populate_runs_list(self):
-        """
-        Fetches and displays the list of historical operation runs (batches)
-        from the UndoManager. Each run is shown with its start time and
-        the number of actions it contains.
-        """
         self._log_message("Refreshing runs list...")
         self.runs_table.setRowCount(0) # Clear table
         self.actions_table.setRowCount(0) # Clear actions table
@@ -165,11 +139,6 @@ class UndoDialog(QDialog):
 
     @pyqtSlot()
     def on_run_selected(self):
-        """
-        Handles the selection of a run in the runs_table.
-        It retrieves the actions associated with the selected run_id from
-        the UndoManager and populates the actions_table.
-        """
         self.actions_table.setRowCount(0) # Clear previous actions
         self.undo_selected_action_button.setEnabled(False)
 
@@ -224,10 +193,6 @@ class UndoDialog(QDialog):
 
     @pyqtSlot()
     def on_action_selected(self):
-        """
-        Handles the selection of an action in the actions_table.
-        Enables the 'Undo Selected Action' button if an action is selected.
-        """
         if self.actions_table.selectedItems():
             self.undo_selected_action_button.setEnabled(True)
         else:
@@ -235,11 +200,6 @@ class UndoDialog(QDialog):
 
     @pyqtSlot()
     def handle_undo_batch(self):
-        """
-        Initiates the process to undo all actions within the currently selected batch (run).
-        Confirms with the user before proceeding. Uses UndoManager to perform the batch undo.
-        Logs results and refreshes the UI.
-        """
         selected_items = self.runs_table.selectedItems()
         if not selected_items:
             QMessageBox.warning(self, "No Selection", "Please select a batch (run) to undo.")
@@ -275,11 +235,6 @@ class UndoDialog(QDialog):
 
     @pyqtSlot()
     def handle_undo_selected_action(self):
-        """
-        Initiates the process to undo the single currently selected action.
-        Confirms with the user before proceeding. Uses UndoManager to perform
-        the individual action undo. Logs results and refreshes the UI.
-        """
         selected_items = self.actions_table.selectedItems()
         if not selected_items:
             QMessageBox.warning(self, "No Selection", "Please select an action to undo.")
