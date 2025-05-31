@@ -2,7 +2,7 @@ import sys
 import queue
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QListWidget, QLineEdit,
-    QSpinBox, QLabel, QTextEdit, QFileDialog, QMessageBox, QListWidgetItem
+    QSpinBox, QLabel, QTextEdit, QFileDialog, QMessageBox, QListWidgetItem, QComboBox, QCheckBox
 )
 from PyQt6.QtCore import QTimer, Qt, pyqtSlot
 
@@ -21,6 +21,12 @@ class ConfigWindow(QWidget):
         self.log_queue = log_queue
         self.monitoring_worker: MonitoringWorker | None = None
         self.worker_status = "Stopped" # Track worker status
+
+        self.RULE_LOGIC_DISPLAY_MAP = {
+            "OR": "Any condition matches",
+            "AND": "All conditions match"
+        }
+        self.RULE_LOGIC_VALUE_MAP = {v: k for k, v in self.RULE_LOGIC_DISPLAY_MAP.items()}
 
         self.setWindowTitle("AutoTidy Configuration")
         self.setGeometry(200, 200, 600, 450) # x, y, width, height
@@ -66,6 +72,13 @@ class ConfigWindow(QWidget):
         self.pattern_lineedit.setPlaceholderText("*.*")
         self.pattern_lineedit.setEnabled(False)
         rule_layout.addWidget(self.pattern_lineedit)
+
+        rule_layout.addWidget(QLabel("Logic:"))
+        self.rule_logic_combo = QComboBox()
+        self.rule_logic_combo.addItems(list(self.RULE_LOGIC_DISPLAY_MAP.values()))
+        self.rule_logic_combo.setEnabled(False)
+        rule_layout.addWidget(self.rule_logic_combo)
+
         main_layout.addLayout(rule_layout)
 
         # --- Status and Logs ---
@@ -74,6 +87,11 @@ class ConfigWindow(QWidget):
         self.status_label = QLabel("Stopped")
         status_layout.addWidget(self.status_label)
         status_layout.addStretch()
+
+        self.dry_run_checkbox = QCheckBox("Dry Run Mode")
+        self.dry_run_checkbox.setToolTip("Log actions that would be taken without actually moving files.")
+        status_layout.addWidget(self.dry_run_checkbox)
+
         self.start_button = QPushButton("Start Monitoring")
         self.stop_button = QPushButton("Stop Monitoring")
         self.stop_button.setEnabled(False)
@@ -92,6 +110,7 @@ class ConfigWindow(QWidget):
         self.folder_list_widget.currentItemChanged.connect(self.update_rule_inputs)
         self.age_spinbox.valueChanged.connect(self.save_rule_changes)
         self.pattern_lineedit.editingFinished.connect(self.save_rule_changes) # Save when focus lost or Enter pressed
+        self.rule_logic_combo.currentIndexChanged.connect(self.save_rule_changes) # Connect new combo box
         self.start_button.clicked.connect(self.start_monitoring)
         self.stop_button.clicked.connect(self.stop_monitoring)
         self.settings_button.clicked.connect(self.open_settings_dialog) # Connect settings button
@@ -147,8 +166,10 @@ class ConfigWindow(QWidget):
                     if self.folder_list_widget.count() == 0:
                          self.age_spinbox.setEnabled(False)
                          self.pattern_lineedit.setEnabled(False)
+                         self.rule_logic_combo.setEnabled(False) # Disable logic combo
                          self.age_spinbox.setValue(0)
                          self.pattern_lineedit.clear()
+                         self.rule_logic_combo.setCurrentText(self.RULE_LOGIC_DISPLAY_MAP["OR"]) # Reset logic combo
 
                 else:
                      QMessageBox.warning(self, "Error", f"Could not remove folder '{path}' from configuration.")
@@ -165,26 +186,36 @@ class ConfigWindow(QWidget):
                 # Block signals temporarily to prevent save_rule_changes from firing
                 self.age_spinbox.blockSignals(True)
                 self.pattern_lineedit.blockSignals(True)
+                self.rule_logic_combo.blockSignals(True)
 
                 self.age_spinbox.setValue(rule.get('age_days', 0))
                 self.pattern_lineedit.setText(rule.get('pattern', '*.*'))
+                internal_logic = rule.get('rule_logic', 'OR')
+                display_text = self.RULE_LOGIC_DISPLAY_MAP.get(internal_logic, self.RULE_LOGIC_DISPLAY_MAP["OR"])
+                self.rule_logic_combo.setCurrentText(display_text)
                 self.age_spinbox.setEnabled(True)
                 self.pattern_lineedit.setEnabled(True)
+                self.rule_logic_combo.setEnabled(True)
 
                 self.age_spinbox.blockSignals(False)
                 self.pattern_lineedit.blockSignals(False)
+                self.rule_logic_combo.blockSignals(False)
             else:
                 # Should not happen if list is synced with config, but handle defensively
                 self.age_spinbox.setEnabled(False)
                 self.pattern_lineedit.setEnabled(False)
+                self.rule_logic_combo.setEnabled(False)
                 self.age_spinbox.setValue(0)
                 self.pattern_lineedit.clear()
+                self.rule_logic_combo.setCurrentText(self.RULE_LOGIC_DISPLAY_MAP["OR"])
         else:
             # No item selected
             self.age_spinbox.setEnabled(False)
             self.pattern_lineedit.setEnabled(False)
+            self.rule_logic_combo.setEnabled(False)
             self.age_spinbox.setValue(0)
             self.pattern_lineedit.clear()
+            self.rule_logic_combo.setCurrentText(self.RULE_LOGIC_DISPLAY_MAP["OR"])
 
     @pyqtSlot()
     def save_rule_changes(self):
@@ -194,8 +225,10 @@ class ConfigWindow(QWidget):
             path = current_item.text()
             age = self.age_spinbox.value()
             pattern = self.pattern_lineedit.text()
-            if self.config_manager.update_folder_rule(path, age, pattern):
-                 self.log_queue.put(f"INFO: Updated rules for {path}")
+            display_text = self.rule_logic_combo.currentText()
+            internal_logic = self.RULE_LOGIC_VALUE_MAP.get(display_text, "OR") # Default to "OR"
+            if self.config_manager.update_folder_rule(path, age, pattern, internal_logic):
+                 self.log_queue.put(f"INFO: Updated rules for {path} (Logic: {display_text})")
             else:
                  # Should not happen if item exists
                  self.log_queue.put(f"ERROR: Failed to update rules for {path} (not found in config?)")
@@ -214,8 +247,16 @@ class ConfigWindow(QWidget):
             return
 
         self.log_queue.put("INFO: Starting monitoring...")
-        # Pass the current config manager and queue
-        self.monitoring_worker = MonitoringWorker(self.config_manager, self.log_queue)
+        # Fetch the check interval from settings
+        check_interval_s = self.config_manager.get_setting("check_interval_seconds", 3600) # Default 1hr
+        dry_run_enabled = self.dry_run_checkbox.isChecked()
+        # Pass the current config manager, queue, check interval, and dry run state
+        self.monitoring_worker = MonitoringWorker(
+            self.config_manager,
+            self.log_queue,
+            check_interval=check_interval_s,
+            dry_run_active=dry_run_enabled # New argument
+        )
         self.monitoring_worker.start()
 
         self.start_button.setEnabled(False)
@@ -262,6 +303,8 @@ class ConfigWindow(QWidget):
                              self.status_label.setText("Stopped (Unexpectedly)")
 
 
+                elif message.startswith("DRY RUN:"):
+                    self.log_view.append(f'<font color="teal"><i>{message}</i></font>')
                 elif message.startswith("ERROR:"):
                     self.log_view.append(f'<font color="red">{message}</font>')
                 elif message.startswith("WARNING:"):

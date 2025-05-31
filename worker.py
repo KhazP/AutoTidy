@@ -13,11 +13,12 @@ DEFAULT_CHECK_INTERVAL_SECONDS = 3600 # 1 hour
 class MonitoringWorker(threading.Thread):
     """Worker thread for monitoring folders and organizing files."""
 
-    def __init__(self, config_manager: ConfigManager, log_queue: queue.Queue, check_interval: int = DEFAULT_CHECK_INTERVAL_SECONDS):
+    def __init__(self, config_manager: ConfigManager, log_queue: queue.Queue, check_interval: int = DEFAULT_CHECK_INTERVAL_SECONDS, dry_run_active: bool = False):
         super().__init__(daemon=True) # Daemon threads exit when main thread exits
         self.config_manager = config_manager
         self.log_queue = log_queue
         self.check_interval = check_interval
+        self.dry_run_active = dry_run_active
         self._stop_event = threading.Event()
         self.running = False # Track running state
 
@@ -43,6 +44,7 @@ class MonitoringWorker(threading.Thread):
                     path_str = folder_config.get('path')
                     age_days = folder_config.get('age_days', 0)
                     pattern = folder_config.get('pattern', '*.*')
+                    rule_logic = folder_config.get('rule_logic', 'OR') # Get rule_logic
 
                     if not path_str:
                         self.log_queue.put("WARNING: Skipping entry with missing path.")
@@ -53,7 +55,7 @@ class MonitoringWorker(threading.Thread):
                         self.log_queue.put(f"ERROR: Monitored path is not a directory or does not exist: {path_str}")
                         continue
 
-                    self.log_queue.put(f"INFO: Scanning {monitored_path} (Age > {age_days} days, Pattern: '{pattern}')")
+                    self.log_queue.put(f"INFO: Scanning {monitored_path} (Age > {age_days}d, Pattern: '{pattern}', Logic: {rule_logic})")
                     files_moved_count = 0
                     try:
                         # Iterate through items in the directory (non-recursive for MVP)
@@ -62,11 +64,15 @@ class MonitoringWorker(threading.Thread):
                                 break # Exit inner loop if stopped
 
                              if item.is_file():
-                                if check_file(item, age_days, pattern):
-                                    success, message = move_file(item, monitored_path)
-                                    self.log_queue.put(f"{'INFO' if success else 'ERROR'}: {message}")
-                                    if success:
-                                        files_moved_count += 1
+                                if check_file(item, age_days, pattern, rule_logic): # Pass rule_logic
+                                    if self.dry_run_active:
+                                        self.log_queue.put(f"DRY RUN: Would move file '{item.name}' from '{monitored_path}' due to rules (Age: {age_days}d, Pattern: '{pattern}', Logic: {rule_logic}).")
+                                        # Do not increment files_moved_count for dry runs
+                                    else:
+                                        success, message = move_file(item, monitored_path)
+                                        self.log_queue.put(f"{'INFO' if success else 'ERROR'}: {message}")
+                                        if success:
+                                            files_moved_count += 1
 
                     except PermissionError:
                          self.log_queue.put(f"ERROR: Permission denied accessing folder: {monitored_path}")

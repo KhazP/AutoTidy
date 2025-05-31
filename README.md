@@ -38,15 +38,14 @@ This tool tackles the inefficiency of manual sorting and periodic cleanups, allo
 ## ✨ Core Functionality
 
 * **Folder Monitoring**: Users can select one or more local folders for AutoTidy to watch.
-* **Rule-Based Organization**: Define rules for each folder based on:
-    * **File Age**: Specify a minimum age (in days) for a file to be considered.
-    * **Filename Pattern**: Use wildcard patterns (e.g., `*.tmp`, `screenshot*.png`) to identify files.
-* **Automated File Moving**: Files matching *either* the age or pattern rule are automatically moved.
+* **Rule-Based Organization**: Define rules for each folder based on: File Age, Filename Pattern, and a **Logic condition** (e.g., match if 'All conditions apply' or 'Any condition applies').
+* **Automated File Moving**: Files matching the defined rules are automatically moved.
 * **Structured Archiving**: Moved files are organized into a dated subfolder structure (`_Cleanup/YYYY-MM-DD`) within the monitored folder, making it easy to locate them later.
-* **Background Operation**: Runs quietly in the system tray, performing checks periodically.
+* **Background Operation**: Runs quietly in the system tray, performing checks periodically **at a user-configurable interval**.
 * **User Control**: Start and stop the monitoring service via the UI or tray menu.
 * **Status & Logging**: View the current status (running/stopped) and a log of recent activities and errors in the configuration window.
 * **Autostart Option**: Configure AutoTidy to start automatically on system login.
+* **Dry Run Mode**: Preview the actions AutoTidy would take without actually moving any files, helping to verify rules.
 
 ---
 ## ⚙️ How It Works
@@ -57,17 +56,18 @@ This tool tackles the inefficiency of manual sorting and periodic cleanups, allo
 2.  **Set Rules**: For each added folder:
     * Specify the **minimum file age** (in days). Files older than this will be targeted.
     * Define a **filename pattern** (e.g., `*.jpg`, `temp_*.*`). Files matching this pattern will be targeted.
-    * *Note: A file will be moved if it meets the age OR the pattern criteria.*
+    * Choose the **logic** to combine these criteria (e.g., 'Any condition matches' or 'All conditions match').
+    * *Note: The file movement depends on the chosen logic that combines age and pattern criteria.*
 3.  **Monitor**: Click "Start Monitoring" in the Configuration Window or via the tray menu.
     * AutoTidy's worker process begins running in the background.
-    * It periodically (default: hourly) scans the configured folders.
+    * It periodically (at the configured interval) scans the configured folders.
 4.  **Organize**: When the worker scans a monitored folder:
     * It checks each file against the rules defined for that folder.
-    * If a file matches (is older than the set age OR its name matches the pattern), AutoTidy moves it.
+    * If a file matches the combined criteria, AutoTidy moves it (unless in Dry Run mode).
     * The file is moved into a subfolder named `_Cleanup` within the monitored folder, further organized by date (e.g., `_Cleanup/YYYY-MM-DD/filename.ext`).
     * If the `_Cleanup` or dated subdirectories don't exist, AutoTidy creates them.
 5.  **Feedback**:
-    * The Configuration Window displays logs of actions (files moved, errors).
+    * The Configuration Window displays logs of actions (files moved, dry run actions, errors).
     * The status (Running/Stopped) is also visible.
     * Critical errors may be shown as message boxes.
 
@@ -105,14 +105,16 @@ To run the application:
     * Select a folder from the "Monitored Folders" list.
     * Set the "Min Age (days)" (e.g., 7 for files older than a week).
     * Enter a "Filename Pattern" (e.g., `*.log`, `image-?.png`).
+    * Select the matching **Logic** from the dropdown: 'Any condition matches' (if age OR pattern is met) or 'All conditions match' (if age AND pattern are met).
     * Changes to rules are saved automatically when you edit them.
 5.  **Start/Stop Monitoring**:
+    * Optionally, check the **'Dry Run Mode'** checkbox next to the Start/Stop buttons. If checked, AutoTidy will only log the actions it *would* perform without actually moving files. Uncheck it for normal operation.
     * Use the "Start Monitoring" / "Stop Monitoring" buttons in the Configuration Window or the tray menu.
 6.  **View Logs**:
-    * The "Logs" section in the Configuration Window shows recent actions and errors.
+    * The "Logs" section in the Configuration Window shows recent actions, dry run logs, and errors.
 7.  **Settings**:
     * Click the "Settings" button in the Configuration Window.
-    * Here you can toggle "Start AutoTidy automatically on system login".
+    * Here you can toggle "Start AutoTidy automatically on system login" and set the **Folder check interval** (e.g., 30 minutes, 2 hours).
 
 ---
 ## 🔧 Configuration
@@ -125,13 +127,14 @@ Settings are managed via two main interfaces:
 * **Remove Selected Button**: Removes the currently selected folder from the monitoring list.
 * **Min Age (days)**: Numeric input for the age rule.
 * **Filename Pattern**: Text input for the pattern rule (supports wildcards like `*` and `?`).
+* **Logic**: Dropdown to select how age and pattern rules are combined ('Any condition matches' or 'All conditions match').
+* **Dry Run Mode Checkbox**: Located near the Start/Stop buttons, allows you to simulate actions.
 * Configuration for folders and rules is saved automatically to a `config.json` file in your user's application data directory (e.g., `%APPDATA%/AutoTidy` on Windows, `~/.config/AutoTidy` on Linux).
 
 **2. Settings Dialog (for application-wide settings):**
 * Accessed via the "Settings" button in the Main Configuration Window.
 * **Start AutoTidy automatically on system login**: Checkbox to enable/disable autostart.
-    * On Windows, this modifies the Registry.
-    * On Linux, this creates/removes a `.desktop` file in `~/.config/autostart/`.
+* **Folder check interval**: Inputs to set a numerical value and a unit (Minutes, Hours, Days) for how often AutoTidy scans folders.
 * Displays the application **Version**.
 * Settings are saved to the same `config.json` file.
 
@@ -176,7 +179,7 @@ Settings are managed via two main interfaces:
 * **Error Handling**: While basic error handling is in place (e.g., for permission errors, file not found), more granular error reporting and recovery mechanisms could be added.
 * **Performance on Very Large Folders**: Scanning extremely large directories with many files might take noticeable time, though it runs in a background thread.
 * **Complex Patterns**: Only `fnmatch` (shell-like wildcards) is supported for patterns, not full regular expressions.
-* **Resource Usage**: The background polling mechanism, while efficient, still consumes some system resources. The check interval is currently fixed.
+* **Resource Usage**: The background polling mechanism, while efficient, still consumes some system resources. The check interval has a minimum practical limit (e.g., 1 minute).
 * **Archive Naming Collision**: If many files with the same name are moved on the same day, they are renamed with an incrementing counter (e.g., `file_1.txt`, `file_2.txt`). This is basic and could be improved.
 * **Symlinks/Shortcuts**: Behavior with symbolic links or shortcuts as monitored items or files within monitored folders might not be explicitly defined or tested. For MVP, it primarily targets regular files.
 * **External Drive Disconnection**: If a monitored folder is on an external drive that gets disconnected, the application will log errors but might not handle reconnection gracefully without a restart of the monitoring service.
@@ -189,7 +192,6 @@ Settings are managed via two main interfaces:
 * Option to Copy files instead of Moving.
 * Option to Delete files (to Recycle Bin/Trash or permanently).
 * More advanced scheduling options (e.g., specific times, more frequent checks).
-* "Dry Run" or simulation mode to preview actions before they are taken.
 * UI for viewing/managing files within the `_Cleanup` folders.
 * Notifications for completed actions or critical errors.
 * More robust handling of filename collisions.
@@ -222,4 +224,3 @@ All rights are reserved. Unauthorized copying, modification, distribution, or us
 
 Please refer to the `LICENSE` file if one is included, or contact the repository owner for licensing inquiries.
 *(Note: A `LICENSE` file was not explicitly provided in the uploaded project structure. This section reflects the statement in the original README.)*
-
