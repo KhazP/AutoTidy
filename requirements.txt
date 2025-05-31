@@ -1,2 +1,8 @@
+ffmpeg-python
+opencv-python
 PyQt6
+python-magic
+reportlab
 send2trash
+spacy
+textract
