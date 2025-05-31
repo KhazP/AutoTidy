@@ -25,20 +25,7 @@ class MonitoringWorker(threading.Thread):
         self.history_manager = HistoryManager(self.config_manager) # Instantiate HistoryManager
 
     def run(self):
-        """
-        Main operational loop of the monitoring worker thread.
-
-        This method continuously scans configured folders based on the schedule
-        defined in the application's configuration. For each folder, it iterates
-        through files, checking them against specified criteria (age, pattern).
-        If a file matches, it performs the configured action (move, copy, delete).
-
-        The loop respects a stop event (`self._stop_event`), allowing for graceful
-        termination. If the event is set, the loop will attempt to finish its
-        current folder scan and then exit, or it will break during the sleep
-        interval. All operations, errors, and status changes are logged via the
-        provided `log_queue`.
-        """
+        """Main loop for the worker thread."""
         self.running = True
         self.log_queue.put("INFO: Monitoring worker started.")
         self.log_queue.put("STATUS: Running")
@@ -93,7 +80,7 @@ class MonitoringWorker(threading.Thread):
                                 break
 
                              if item.is_file():
-                                if check_file(item, age_days, pattern, use_regex, self.log_queue): # Pass log_queue
+                                if check_file(item, age_days, pattern, use_regex):
                                     success, message = process_file_action(
                                         item,
                                         monitored_path,
@@ -104,17 +91,16 @@ class MonitoringWorker(threading.Thread):
                                         age_days, # rule_age_days
                                         use_regex, # rule_use_regex
                                         self.history_manager.log_action, # history_logger_callable
-                                        current_run_id, # run_id
-                                        self.log_queue # Pass log_queue
+                                        current_run_id # run_id
                                     )
                                     self.log_queue.put(f"{'INFO' if success else 'ERROR'}: {message}")
                                     if success:
                                         files_processed_count += 1
 
                     except PermissionError:
-                         self.log_queue.put(f"ERROR: PermissionError denied accessing folder: {monitored_path}")
+                         self.log_queue.put(f"ERROR: Permission denied accessing folder: {monitored_path}")
                     except Exception as e:
-                         self.log_queue.put(f"ERROR: Unexpected {type(e).__name__} while scanning {monitored_path}: {e}")
+                         self.log_queue.put(f"ERROR: Unexpected error scanning {monitored_path}: {e}")
 
                     if files_processed_count > 0:
                          self.log_queue.put(f"INFO: Finished scan for {monitored_path}, processed {files_processed_count} file(s).")
@@ -137,13 +123,5 @@ class MonitoringWorker(threading.Thread):
 
 
     def stop(self):
-        """
-        Signals the worker thread to stop its operations cleanly.
-
-        This method sets an internal threading event (`self._stop_event`).
-        The `run` method's main loop checks this event and, if set,
-        will break out of its scanning and processing cycle before starting
-        a new scan or after its current sleep interval finishes. This allows
-        the thread to shut down gracefully.
-        """
+        """Signals the worker thread to stop."""
         self._stop_event.set()

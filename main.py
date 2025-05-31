@@ -42,7 +42,7 @@ class AutoTidyApp(QApplication):
         if os.path.exists(ICON_PATH):
             self.tray_icon.setIcon(QIcon(ICON_PATH))
         else:
-            self.log_queue.put(f"WARNING: Icon file not found at {ICON_PATH}. Using default system icon if available.")
+            print(f"Warning: Icon file not found at {ICON_PATH}", file=sys.stderr)
             # Optionally set a default Qt icon if desired
             # self.tray_icon.setIcon(QApplication.style().standardIcon(QStyle.StandardPixmap.SP_ComputerIcon))
         self.tray_icon.setToolTip(f"{APP_NAME} is running")
@@ -81,34 +81,22 @@ class AutoTidyApp(QApplication):
 
     @pyqtSlot(QSystemTrayIcon.ActivationReason)
     def on_tray_activated(self, reason):
-        """
-        Handles tray icon activation events. Specifically, toggles the
-        configuration window visibility on a left click (Trigger event).
-        """
+        """Handle tray icon activation (e.g., click)."""
         if reason == QSystemTrayIcon.ActivationReason.Trigger: # Left click
             self.toggle_window()
         # elif reason == QSystemTrayIcon.ActivationReason.Context: # Right click handled by menu
 
     @pyqtSlot()
     def toggle_window(self):
-        """
-        Shows the configuration window if it is hidden, or hides it if it
-        is visible. Ensures the window is brought to the front when shown.
-        """
+        """Show or hide the configuration window."""
         if self.config_window.isVisible():
             self.config_window.hide()
         else:
-            self.config_window.force_show() # force_show brings to front and activates
+            self.config_window.force_show()
 
     @pyqtSlot()
     def quit_app(self):
-        """
-        Initiates a graceful shutdown of the application.
-
-        This includes stopping the monitoring worker thread, ensuring its
-        termination within a timeout, saving the application configuration,
-        hiding the tray icon, and then quitting the QApplication.
-        """
+        """Cleanly stop the worker and quit the application."""
         self.log_queue.put("INFO: Quit action triggered. Shutting down...")
 
         # Attempt to stop the worker thread gracefully

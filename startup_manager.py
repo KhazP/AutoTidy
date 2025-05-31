@@ -1,11 +1,4 @@
-"""
-Manages application autostart behavior across different operating systems.
-
-This module provides functionality to enable or disable the application
-from starting automatically when the user logs in. It currently supports
-Windows (via registry manipulation) and Linux (via .desktop files in
-~/.config/autostart/).
-"""
+\
 import sys
 import os
 import platform
@@ -14,16 +7,7 @@ import winreg # Only available on Windows
 APP_REGISTRY_PATH = r"Software\\Microsoft\\Windows\\CurrentVersion\\Run"
 
 def _get_executable_path() -> str:
-    """
-    Determines the absolute path to the currently running executable or the main script.
-
-    If the application is running as a bundled executable (e.g., via PyInstaller),
-    `sys.executable` is used. Otherwise (running as a script), `sys.argv[0]`
-    (the path to the script) is used.
-
-    Returns:
-        The absolute path to the executable or main script file.
-    """
+    """Gets the path to the executable or the main script."""
     if getattr(sys, 'frozen', False):
         # Running as a bundled executable (PyInstaller)
         return os.path.abspath(sys.executable)
@@ -33,52 +17,29 @@ def _get_executable_path() -> str:
         return os.path.abspath(sys.argv[0])
 
 def _get_windows_run_command(app_path: str) -> str:
-    """
-    Constructs the command string to be stored in the Windows registry for autostart.
-
-    If running as a bundled executable, the command is simply the quoted path
-    to the executable. If running as a script, it constructs a command that
-    invokes `pythonw.exe` (to avoid a console window) with the script path.
-
-    Args:
-        app_path: The absolute path to the executable or main script.
-
-    Returns:
-        The formatted command string suitable for the Windows registry.
-    """
+    """Constructs the command to be stored in the Windows registry."""
     if getattr(sys, 'frozen', False):
         # Path to the executable
         return f'"{app_path}"'
     else:
         # Path to the script, needs python interpreter
         python_executable = sys.executable
-        # Use pythonw.exe to avoid console window if the original is python.exe
+        # Use pythonw.exe to avoid console window
         if python_executable.lower().endswith("python.exe"):
             python_executable = python_executable[:-10] + "pythonw.exe"
         return f'"{python_executable}" "{app_path}"'
 
 
-def set_autostart(enable: bool, app_name: str) -> bool:
+def set_autostart(enable: bool, app_name: str):
     """
     Configures the application to start automatically on system login.
 
-    This function handles platform-specific mechanisms:
-    - Windows: Modifies the `HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Run`
-               registry key.
-    - Linux: Creates or removes a .desktop file in `~/.config/autostart/`.
-    - Other OS: Prints a warning and returns False, as autostart is not implemented.
-
     Args:
-        enable: If True, enables autostart. If False, disables autostart.
-        app_name: The name of the application, used for the registry key on Windows
-                  or the .desktop filename on Linux. This should be unique to
-                  avoid conflicts.
+        enable: True to enable autostart, False to disable.
+        app_name: The name for the registry key (should be unique).
 
     Returns:
-        True if the autostart setting was successfully applied (or if the desired
-        state was already set, e.g., disabling an already non-existent entry).
-        False if an error occurred or if autostart is not supported on the
-        current platform.
+        True if the operation was successful, False otherwise.
     """
     app_path = _get_executable_path()
     system = platform.system()
