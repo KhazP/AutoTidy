@@ -6,3 +6,4 @@ reportlab
 send2trash
 spacy
 textract
+extract-msg<=0.29.0
