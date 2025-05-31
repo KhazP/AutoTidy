@@ -17,9 +17,22 @@ from ui_undo_dialog import UndoDialog # Added for Undo functionality
 LOG_QUEUE_CHECK_INTERVAL_MS = 250
 
 class ConfigWindow(QWidget):
-    """Main configuration window for AutoTidy."""
+    """
+    The main configuration window for the AutoTidy application.
+    It allows users to manage monitored folders, define rules for file organization
+    (age, pattern, action), start/stop the monitoring service, view logs,
+    and access application settings and action history/undo functionality.
+    """
 
     def __init__(self, config_manager: ConfigManager, log_queue: queue.Queue):
+        """
+        Initializes the ConfigWindow.
+
+        Args:
+            config_manager: An instance of ConfigManager for handling application configuration.
+            log_queue: A queue.Queue for receiving log messages from other parts of the application,
+                       especially the monitoring worker.
+        """
         super().__init__()
         self.config_manager = config_manager
         self.log_queue = log_queue
@@ -36,7 +49,10 @@ class ConfigWindow(QWidget):
         self._setup_log_timer()
 
     def _init_ui(self):
-        """Initialize UI elements and layout."""
+        """
+        Initializes all UI elements, layouts, and connects signals to slots.
+        This method sets up the visual structure of the configuration window.
+        """
         main_layout = QVBoxLayout(self)
 
         # --- Top Controls ---
@@ -47,11 +63,11 @@ class ConfigWindow(QWidget):
         top_controls_layout.addWidget(self.remove_folder_button)
         top_controls_layout.addStretch()
 
-        self.viewHistoryButton = QPushButton("View History") # Add View History button
-        top_controls_layout.addWidget(self.viewHistoryButton)
+        # self.viewHistoryButton = QPushButton("View History") # Removed
+        # top_controls_layout.addWidget(self.viewHistoryButton) # Removed
 
-        self.view_history_button = QPushButton("View Action History / Undo") # New Undo button
-        top_controls_layout.addWidget(self.view_history_button) # Add new button to layout
+        self.view_history_button = QPushButton("View Action History / Undo") # Primary history/undo access
+        top_controls_layout.addWidget(self.view_history_button)
 
         self.settings_button = QPushButton("Settings")
         top_controls_layout.addWidget(self.settings_button)
@@ -127,13 +143,15 @@ class ConfigWindow(QWidget):
         self.start_button.clicked.connect(self.start_monitoring)
         self.stop_button.clicked.connect(self.stop_monitoring)
         self.settings_button.clicked.connect(self.open_settings_dialog)
-        self.viewHistoryButton.clicked.connect(self.open_history_viewer) # Connect View History button
-        self.view_history_button.clicked.connect(self.open_undo_dialog) # Connect new Undo button
-
+        # self.viewHistoryButton.clicked.connect(self.open_history_viewer) # Removed
+        self.view_history_button.clicked.connect(self.open_undo_dialog) # Main undo/history access
         self._update_ui_for_status_and_mode() # Initial UI update
 
     def _load_initial_config(self):
-        """Load existing configuration into the UI."""
+        """
+        Loads the initial configuration from the ConfigManager and populates
+        the UI elements, such as the list of monitored folders.
+        """
         # Config is now a dict, get folders list
         folders = self.config_manager.get_monitored_folders()
         self.folder_list_widget.clear()
@@ -151,7 +169,11 @@ class ConfigWindow(QWidget):
 
     @pyqtSlot()
     def add_folder(self):
-        """Open dialog to add a folder to monitor."""
+        """
+        Opens a dialog for the user to select a folder to monitor.
+        If a folder is selected and not already monitored, it's added to the
+        configuration and the UI list.
+        """
         dir_path = QFileDialog.getExistingDirectory(self, "Select Folder to Monitor")
         if dir_path:
             # Use default rules initially
@@ -166,7 +188,10 @@ class ConfigWindow(QWidget):
 
     @pyqtSlot()
     def remove_folder(self):
-        """Remove the selected folder from monitoring."""
+        """
+        Removes the currently selected folder from the monitored list,
+        after user confirmation. Updates both the configuration and the UI.
+        """
         current_item = self.folder_list_widget.currentItem()
         if current_item:
             path = current_item.text()
@@ -199,7 +224,15 @@ class ConfigWindow(QWidget):
 
     @pyqtSlot(QListWidgetItem, QListWidgetItem)
     def update_rule_inputs(self, current: QListWidgetItem, previous: QListWidgetItem):
-        """Update rule input fields when folder selection changes."""
+        """
+        Populates the rule editing fields (age, pattern, action, etc.)
+        based on the currently selected folder in the list.
+        Disables input fields if no folder is selected.
+
+        Args:
+            current: The newly selected QListWidgetItem.
+            previous: The previously selected QListWidgetItem (can be None).
+        """
         if current:
             path = current.text()
             rule = self.config_manager.get_folder_rule(path)
@@ -263,7 +296,11 @@ class ConfigWindow(QWidget):
 
     @pyqtSlot()
     def save_rule_changes(self):
-        """Save the current rule input values for the selected folder."""
+        """
+        Saves the changes made in the rule input fields (age, pattern, action)
+        to the configuration for the currently selected folder.
+        Logs the update action.
+        """
         current_item = self.folder_list_widget.currentItem()
         if current_item:
             path = current_item.text()
@@ -313,21 +350,29 @@ class ConfigWindow(QWidget):
         dialog.exec() # Show the dialog modally
         self._update_ui_for_status_and_mode() # Refresh UI after settings change
 
-    @pyqtSlot()
-    def open_history_viewer(self):
-        """Opens the history viewer dialog."""
-        # Pass config_manager and history_manager
-        dialog = HistoryViewerDialog(self.config_manager, self.history_manager, self)
-        dialog.exec()
+    # Removed open_history_viewer method as it's consolidated into open_undo_dialog
+    # @pyqtSlot()
+    # def open_history_viewer(self):
+    #     """Opens the history viewer dialog."""
+    #     # Pass config_manager and history_manager
+    #     dialog = HistoryViewerDialog(self.config_manager, self.history_manager, self)
+    #     dialog.exec()
 
     @pyqtSlot()
     def open_undo_dialog(self):
-        """Open the undo/history dialog window."""
+        """
+        Opens the dialog that allows users to view action history and perform
+        undo operations.
+        """
         dialog = UndoDialog(self.undo_manager, self.config_manager, self)
         dialog.exec()
 
     def _update_ui_for_status_and_mode(self):
-        """Updates button texts and status label based on worker status and dry run mode."""
+        """
+        Updates the UI elements (start/stop buttons, status label) to reflect
+        the current operational status of the monitoring worker (e.g., Running,
+        Stopped, Dry Run Active) and the configured dry run mode.
+        """
         dry_run_active = self.config_manager.get_dry_run_mode()
         is_running = self.worker_status == "Running"
 
@@ -440,7 +485,14 @@ class ConfigWindow(QWidget):
 
 
     def closeEvent(self, event):
-        """Handle the window close event (hide instead of quit)."""
+        """
+        Handles the window's close event. Instead of closing the application,
+        this method hides the window, as the application continues to run
+        in the system tray.
+
+        Args:
+            event: The QCloseEvent triggered by the window closure attempt.
+        """
         event.ignore()
         self.hide()
         # Optionally show a tray message
@@ -453,7 +505,10 @@ class ConfigWindow(QWidget):
         #     )
 
     def force_show(self):
-        """Ensure the window is visible and brought to the front."""
+        """
+        Ensures the configuration window is visible, active, and raised to the front,
+        making it prominent for the user.
+        """
         self.show()
         self.activateWindow()
         self.raise_()
