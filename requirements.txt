@@ -5,5 +5,4 @@ python-magic
 reportlab
 send2trash
 spacy
-textract==1.6.4
-extract-msg==0.29.0
+textract
