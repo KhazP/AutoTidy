@@ -3,7 +3,7 @@
 # 🚀 AutoTidy - Automated File Organizer 🚀
 
 [![Version](https://img.shields.io/badge/version-1.0.1-blue.svg?style=for-the-badge)](constants.py)
-[![License](https://img.shields.io/badge/license-Proprietary-red.svg?style=for-the-badge)](LICENSE)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg?style=for-the-badge)](LICENSE)
 [![Contributions Welcome](https://img.shields.io/badge/contributions-welcome-orange.svg?style=for-the-badge)](#-contributing)
 
 > **Automatically tidy up your cluttered folders!**
@@ -217,9 +217,5 @@ Please ensure your code adheres to general Python best practices and maintains t
 ---
 ## 📄 License
 
-This software is **Proprietary**.
-All rights are reserved. Unauthorized copying, modification, distribution, or use of this software or any part thereof is strictly prohibited.
-
-Please refer to the `LICENSE` file if one is included, or contact the repository owner for licensing inquiries.
-*(Note: A `LICENSE` file was not explicitly provided in the uploaded project structure. This section reflects the statement in the original README.)*
+This project is licensed under the GNU General Public License v3.0 - see the [LICENSE](LICENSE) file for details.
 
