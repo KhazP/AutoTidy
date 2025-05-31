@@ -73,6 +73,12 @@ class ConfigWindow(QWidget):
         self.rule_logic_combo.setEnabled(False)
         rule_layout.addWidget(self.rule_logic_combo)
 
+        rule_layout.addWidget(QLabel("Pattern Type:"))
+        self.pattern_type_combo = QComboBox()
+        self.pattern_type_combo.addItems(["Glob", "Regex"]) # UI friendly names
+        self.pattern_type_combo.setEnabled(False)
+        rule_layout.addWidget(self.pattern_type_combo)
+
         main_layout.addLayout(rule_layout)
 
         # --- Status and Logs ---
@@ -99,7 +105,8 @@ class ConfigWindow(QWidget):
         self.folder_list_widget.currentItemChanged.connect(self.update_rule_inputs)
         self.age_spinbox.valueChanged.connect(self.save_rule_changes)
         self.pattern_lineedit.editingFinished.connect(self.save_rule_changes) # Save when focus lost or Enter pressed
-        self.rule_logic_combo.currentIndexChanged.connect(self.save_rule_changes) # Connect new combo box
+        self.rule_logic_combo.currentIndexChanged.connect(self.save_rule_changes)
+        self.pattern_type_combo.currentIndexChanged.connect(self.save_rule_changes) # Connect new combo box
         self.start_button.clicked.connect(self.start_monitoring)
         self.stop_button.clicked.connect(self.stop_monitoring)
         self.settings_button.clicked.connect(self.open_settings_dialog) # Connect settings button
@@ -155,10 +162,12 @@ class ConfigWindow(QWidget):
                     if self.folder_list_widget.count() == 0:
                          self.age_spinbox.setEnabled(False)
                          self.pattern_lineedit.setEnabled(False)
-                         self.rule_logic_combo.setEnabled(False) # Disable logic combo
+                         self.rule_logic_combo.setEnabled(False)
+                         self.pattern_type_combo.setEnabled(False) # Disable pattern type combo
                          self.age_spinbox.setValue(0)
                          self.pattern_lineedit.clear()
-                         self.rule_logic_combo.setCurrentIndex(0) # Reset logic combo
+                         self.rule_logic_combo.setCurrentIndex(0)
+                         self.pattern_type_combo.setCurrentIndex(0) # Reset pattern type combo
 
                 else:
                      QMessageBox.warning(self, "Error", f"Could not remove folder '{path}' from configuration.")
@@ -176,33 +185,47 @@ class ConfigWindow(QWidget):
                 self.age_spinbox.blockSignals(True)
                 self.pattern_lineedit.blockSignals(True)
                 self.rule_logic_combo.blockSignals(True)
+                self.pattern_type_combo.blockSignals(True)
 
                 self.age_spinbox.setValue(rule.get('age_days', 0))
                 self.pattern_lineedit.setText(rule.get('pattern', '*.*'))
-                self.rule_logic_combo.setCurrentText(rule.get('rule_logic', 'OR'))
+                self.rule_logic_combo.setCurrentText(rule.get('rule_logic', 'OR').upper())
+
+                pattern_type_from_config = rule.get('pattern_type', 'glob').lower()
+                if pattern_type_from_config == 'regex':
+                    self.pattern_type_combo.setCurrentText("Regex")
+                else: # Default to Glob
+                    self.pattern_type_combo.setCurrentText("Glob")
+
                 self.age_spinbox.setEnabled(True)
                 self.pattern_lineedit.setEnabled(True)
                 self.rule_logic_combo.setEnabled(True)
+                self.pattern_type_combo.setEnabled(True)
 
                 self.age_spinbox.blockSignals(False)
                 self.pattern_lineedit.blockSignals(False)
                 self.rule_logic_combo.blockSignals(False)
+                self.pattern_type_combo.blockSignals(False)
             else:
                 # Should not happen if list is synced with config, but handle defensively
                 self.age_spinbox.setEnabled(False)
                 self.pattern_lineedit.setEnabled(False)
                 self.rule_logic_combo.setEnabled(False)
+                self.pattern_type_combo.setEnabled(False)
                 self.age_spinbox.setValue(0)
                 self.pattern_lineedit.clear()
                 self.rule_logic_combo.setCurrentIndex(0)
+                self.pattern_type_combo.setCurrentIndex(0)
         else:
             # No item selected
             self.age_spinbox.setEnabled(False)
             self.pattern_lineedit.setEnabled(False)
             self.rule_logic_combo.setEnabled(False)
+            self.pattern_type_combo.setEnabled(False)
             self.age_spinbox.setValue(0)
             self.pattern_lineedit.clear()
             self.rule_logic_combo.setCurrentIndex(0)
+            self.pattern_type_combo.setCurrentIndex(0)
 
     @pyqtSlot()
     def save_rule_changes(self):
@@ -212,9 +235,11 @@ class ConfigWindow(QWidget):
             path = current_item.text()
             age = self.age_spinbox.value()
             pattern = self.pattern_lineedit.text()
-            rule_logic = self.rule_logic_combo.currentText() # Get logic from combo box
-            if self.config_manager.update_folder_rule(path, age, pattern, rule_logic):
-                 self.log_queue.put(f"INFO: Updated rules for {path} (Logic: {rule_logic})")
+            rule_logic = self.rule_logic_combo.currentText().upper() # Ensure consistent case
+            pattern_type = self.pattern_type_combo.currentText().lower() # Get pattern type, e.g. "glob" or "regex"
+
+            if self.config_manager.update_folder_rule(path, age, pattern, rule_logic, pattern_type):
+                 self.log_queue.put(f"INFO: Updated rules for {path} (Logic: {rule_logic}, Type: {pattern_type})")
             else:
                  # Should not happen if item exists
                  self.log_queue.put(f"ERROR: Failed to update rules for {path} (not found in config?)")
