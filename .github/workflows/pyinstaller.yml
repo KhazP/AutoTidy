@@ -1,0 +1,34 @@
+name: Build Executable with PyInstaller
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  pyinstaller-build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Build Executable with PyInstaller
+        uses: Martin005/pyinstaller-action@v1.2.0
+        with:
+          spec: 'main.spec'
+          python_ver: '3.10'
+          requirements: 'requirements.txt'
+          upload_exe_with_name: 'AutoTidy-executable'
+
+      # Optionally, upload the dist folder as an artifact
+      - name: Upload dist folder
+        uses: actions/upload-artifact@v4
+        with:
+          name: AutoTidy-dist
+          path: dist/ 
