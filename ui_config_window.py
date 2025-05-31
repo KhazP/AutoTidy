@@ -11,6 +11,8 @@ from worker import MonitoringWorker
 from ui_settings_dialog import SettingsDialog
 from ui_history_viewer_dialog import HistoryViewerDialog # Import History Viewer
 from history_manager import HistoryManager # Import HistoryManager
+from undo_manager import UndoManager # Added for Undo functionality
+from ui_undo_dialog import UndoDialog # Added for Undo functionality
 
 LOG_QUEUE_CHECK_INTERVAL_MS = 250
 
@@ -22,6 +24,7 @@ class ConfigWindow(QWidget):
         self.config_manager = config_manager
         self.log_queue = log_queue
         self.history_manager = HistoryManager(self.config_manager) # Instantiate HistoryManager
+        self.undo_manager = UndoManager(self.config_manager) # Instantiate UndoManager
         self.monitoring_worker: MonitoringWorker | None = None
         self.worker_status = "Stopped" # Track worker status
 
@@ -46,6 +49,9 @@ class ConfigWindow(QWidget):
 
         self.viewHistoryButton = QPushButton("View History") # Add View History button
         top_controls_layout.addWidget(self.viewHistoryButton)
+
+        self.view_history_button = QPushButton("View Action History / Undo") # New Undo button
+        top_controls_layout.addWidget(self.view_history_button) # Add new button to layout
 
         self.settings_button = QPushButton("Settings")
         top_controls_layout.addWidget(self.settings_button)
@@ -122,6 +128,7 @@ class ConfigWindow(QWidget):
         self.stop_button.clicked.connect(self.stop_monitoring)
         self.settings_button.clicked.connect(self.open_settings_dialog)
         self.viewHistoryButton.clicked.connect(self.open_history_viewer) # Connect View History button
+        self.view_history_button.clicked.connect(self.open_undo_dialog) # Connect new Undo button
 
         self._update_ui_for_status_and_mode() # Initial UI update
 
@@ -311,6 +318,12 @@ class ConfigWindow(QWidget):
         """Opens the history viewer dialog."""
         # Pass config_manager and history_manager
         dialog = HistoryViewerDialog(self.config_manager, self.history_manager, self)
+        dialog.exec()
+
+    @pyqtSlot()
+    def open_undo_dialog(self):
+        """Open the undo/history dialog window."""
+        dialog = UndoDialog(self.undo_manager, self.config_manager, self)
         dialog.exec()
 
     def _update_ui_for_status_and_mode(self):
