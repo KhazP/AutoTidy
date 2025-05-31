@@ -5,7 +5,7 @@ a = Analysis(
     ['main.py'],
     pathex=[],
     binaries=[],
-    datas=[],
+    datas=[('autotidyicon.ico', '.')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
