@@ -1,6 +1,6 @@
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QCheckBox, QPushButton, QDialogButtonBox,
-    QWidget, QMessageBox, QLabel # Added QLabel
+    QWidget, QMessageBox, QLabel, QSpinBox, QHBoxLayout # Added QSpinBox, QHBoxLayout
 )
 from PyQt6.QtCore import pyqtSlot
 
@@ -15,6 +15,7 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self.config_manager = config_manager
         self.initial_start_on_login = self.config_manager.get_setting("start_on_login", False)
+        self.initial_check_interval = self.config_manager.get_setting("check_interval_seconds", 3600)
 
         self.setWindowTitle("AutoTidy Settings")
         self.setModal(True) # Block interaction with the main window
@@ -29,6 +30,17 @@ class SettingsDialog(QDialog):
         self.autostart_checkbox = QCheckBox("Start AutoTidy automatically on system login")
         self.autostart_checkbox.setChecked(self.initial_start_on_login)
         layout.addWidget(self.autostart_checkbox)
+
+        # --- Check Interval SpinBox ---
+        interval_layout = QHBoxLayout()
+        interval_label = QLabel("Folder check interval:")
+        self.interval_spinbox = QSpinBox()
+        self.interval_spinbox.setRange(60, 86400)  # 1 minute to 24 hours
+        self.interval_spinbox.setSuffix(" seconds")
+        self.interval_spinbox.setValue(self.initial_check_interval)
+        interval_layout.addWidget(interval_label)
+        interval_layout.addWidget(self.interval_spinbox)
+        layout.addLayout(interval_layout)
 
         # --- Version Label ---
         version_label = QLabel(f"Version: {APP_VERSION}")
@@ -47,15 +59,15 @@ class SettingsDialog(QDialog):
     @pyqtSlot()
     def accept(self):
         """Handle OK button click: save settings and apply autostart."""
+        settings_changed = False
         new_start_on_login = self.autostart_checkbox.isChecked()
+        new_check_interval = self.interval_spinbox.value()
 
-        # Only apply changes if the setting has actually changed
+        # Check if start_on_login changed
         if new_start_on_login != self.initial_start_on_login:
-            # 1. Update config
             self.config_manager.set_setting("start_on_login", new_start_on_login)
-            self.config_manager.save_config() # Ensure config is saved immediately
-
-            # 2. Apply autostart setting
+            settings_changed = True
+            # Apply autostart setting - this part has side effects beyond just config saving
             success = set_autostart(new_start_on_login, APP_NAME)
             if not success:
                 QMessageBox.warning(
@@ -65,8 +77,17 @@ class SettingsDialog(QDialog):
                     f"Please check application logs or permissions."
                 )
             else:
-                 # Update initial state for next time dialog is opened in same session
-                 self.initial_start_on_login = new_start_on_login
+                self.initial_start_on_login = new_start_on_login # Update initial state
+
+        # Check if check_interval_seconds changed
+        if new_check_interval != self.initial_check_interval:
+            self.config_manager.set_setting("check_interval_seconds", new_check_interval)
+            self.initial_check_interval = new_check_interval # Update initial state
+            settings_changed = True
+
+        # Save config if any setting changed
+        if settings_changed:
+            self.config_manager.save_config()
 
         super().accept() # Close the dialog with QDialog.Accepted status
 
