@@ -17,7 +17,7 @@ class ConfigManager:
         self.app_name = app_name
         self.config_dir = self._get_config_dir()
         self.config_file = self.config_dir / "config.json"
-        self.default_config = {'folders': [], 'settings': {'start_on_login': False}}
+        self.default_config = {'folders': [], 'settings': {'start_on_login': False, 'check_interval_seconds': 3600}}
         self.config = self._load_config()
 
     def _get_config_dir(self) -> Path:
@@ -41,10 +41,22 @@ class ConfigManager:
             with open(self.config_file, 'r') as f:
                 config_data = json.load(f)
                 # Basic validation (check if it's a dict with expected keys)
-                if isinstance(config_data, dict) and 'folders' in config_data and 'settings' in config_data:
+                if isinstance(config_data, dict) and 'folders' in config_data: # 'settings' check removed as setdefault will handle it
                     # Ensure default settings exist if missing
-                    if 'start_on_login' not in config_data['settings']:
-                        config_data['settings']['start_on_login'] = self.default_config['settings']['start_on_login']
+                    # Ensure 'settings' key itself exists in config_data first
+                    loaded_settings = config_data.setdefault('settings', {})
+                    default_settings = self.default_config['settings']
+                    for key, default_value in default_settings.items():
+                        if key not in loaded_settings: # Check against loaded_settings
+                            loaded_settings[key] = default_value
+                    # No need to re-assign config_data['settings'] if using setdefault and modifying loaded_settings in place
+
+                    # Ensure rule_logic exists for all loaded folders
+                    loaded_folders = config_data.get('folders', [])
+                    for folder_item in loaded_folders:
+                        if 'rule_logic' not in folder_item:
+                            folder_item['rule_logic'] = 'OR'
+
                     return config_data
                 # Handle migration from old list format
                 elif isinstance(config_data, list):
@@ -54,6 +66,7 @@ class ConfigManager:
                      valid_folders = []
                      for item in config_data:
                          if isinstance(item, dict) and 'path' in item and 'age_days' in item and 'pattern' in item:
+                             item.setdefault('rule_logic', 'OR') # Ensure rule_logic default during migration
                              valid_folders.append(item)
                          else:
                              print(f"Warning: Skipping invalid folder item during migration: {item}", file=sys.stderr)
@@ -96,7 +109,7 @@ class ConfigManager:
         """Adds a new folder configuration."""
         folders = self.config.setdefault('folders', []) # Ensure 'folders' key exists
         if not any(item['path'] == path for item in folders):
-            folders.append({'path': path, 'age_days': age_days, 'pattern': pattern})
+            folders.append({'path': path, 'age_days': age_days, 'pattern': pattern, 'rule_logic': 'OR'})
             self.save_config()
             return True
         return False # Path already exists
@@ -111,13 +124,14 @@ class ConfigManager:
             return True
         return False # Path not found
 
-    def update_folder_rule(self, path: str, age_days: int, pattern: str) -> bool:
+    def update_folder_rule(self, path: str, age_days: int, pattern: str, rule_logic: str) -> bool:
         """Updates the rules for a specific folder path."""
         folders = self.config.setdefault('folders', [])
         for item in folders:
             if item['path'] == path:
                 item['age_days'] = age_days
                 item['pattern'] = pattern
+                item['rule_logic'] = rule_logic
                 self.save_config()
                 return True
         return False # Path not found
