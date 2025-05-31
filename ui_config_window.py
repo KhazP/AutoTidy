@@ -2,13 +2,11 @@ import sys
 import queue
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QListWidget, QLineEdit,
-    QSpinBox, QLabel, QTextEdit, QFileDialog, QMessageBox, QListWidgetItem, QComboBox, QCheckBox,
-    QSystemTrayIcon # Added for type hinting
+    QSpinBox, QLabel, QTextEdit, QFileDialog, QMessageBox, QListWidgetItem, QComboBox, QCheckBox
 )
-from PyQt6.QtCore import QTimer, Qt, pyqtSlot, QCoreApplication
+from PyQt6.QtCore import QTimer, Qt, pyqtSlot
 
 from config_manager import ConfigManager
-from ui_rule_editor_dialog import RuleEditorDialog # Import the new RuleEditorDialog
 from worker import MonitoringWorker
 from ui_settings_dialog import SettingsDialog
 from ui_history_viewer_dialog import HistoryViewerDialog # Import History Viewer
@@ -21,11 +19,10 @@ LOG_QUEUE_CHECK_INTERVAL_MS = 250
 class ConfigWindow(QWidget):
     """Main configuration window for AutoTidy."""
 
-    def __init__(self, config_manager: ConfigManager, log_queue: queue.Queue, tray_icon: QSystemTrayIcon): # Added tray_icon
+    def __init__(self, config_manager: ConfigManager, log_queue: queue.Queue):
         super().__init__()
         self.config_manager = config_manager
         self.log_queue = log_queue
-        self.tray_icon = tray_icon # Store tray_icon
         self.history_manager = HistoryManager(self.config_manager) # Instantiate HistoryManager
         self.undo_manager = UndoManager(self.config_manager) # Instantiate UndoManager
         self.monitoring_worker: MonitoringWorker | None = None
@@ -66,15 +63,39 @@ class ConfigWindow(QWidget):
         main_layout.addWidget(self.folder_list_widget)
 
         # --- Rule Editor ---
-        # This entire section including the QHBoxLayout "rule_layout" and its widgets
-        # (age_spinbox, pattern_lineedit, useRegexCheckbox, rule_logic_combo, actionComboBox)
-        # is being removed and replaced by the RuleEditorDialog.
-        # The self.edit_rule_button is now added below the folder list.
+        rule_layout = QHBoxLayout()
+        rule_layout.addWidget(QLabel("Rules for selected folder:"))
+        rule_layout.addWidget(QLabel("Min Age (days):"))
+        self.age_spinbox = QSpinBox()
+        self.age_spinbox.setRange(0, 3650) # 0 to 10 years
+        self.age_spinbox.setEnabled(False)
+        rule_layout.addWidget(self.age_spinbox)
 
-        # --- Edit Rule Button ---
-        self.edit_rule_button = QPushButton("Edit Rule for Selected Folder")
-        self.edit_rule_button.setEnabled(False) # Disabled until a folder is selected
-        main_layout.addWidget(self.edit_rule_button)
+        rule_layout.addWidget(QLabel("Filename Pattern:"))
+        self.pattern_lineedit = QLineEdit()
+        self.pattern_lineedit.setPlaceholderText("*.*")
+        self.pattern_lineedit.setEnabled(False)
+        rule_layout.addWidget(self.pattern_lineedit)
+
+        # Add Use Regex Checkbox
+        self.useRegexCheckbox = QCheckBox("Use Regular Expression")
+        self.useRegexCheckbox.setEnabled(False)
+        rule_layout.addWidget(self.useRegexCheckbox)
+
+        rule_layout.addWidget(QLabel("Logic:"))
+        self.rule_logic_combo = QComboBox()
+        self.rule_logic_combo.addItems(["OR", "AND"])
+        self.rule_logic_combo.setEnabled(False)
+        rule_layout.addWidget(self.rule_logic_combo)
+
+        # Action ComboBox (Move/Copy/Delete)
+        rule_layout.addWidget(QLabel("Action:"))
+        self.actionComboBox = QComboBox()
+        self.actionComboBox.addItems(["Move", "Copy", "Delete to Trash", "Delete Permanently"])
+        self.actionComboBox.setEnabled(False)
+        rule_layout.addWidget(self.actionComboBox)
+
+        main_layout.addLayout(rule_layout)
 
         # --- Status and Logs ---
         status_layout = QHBoxLayout()
@@ -98,13 +119,11 @@ class ConfigWindow(QWidget):
         self.add_folder_button.clicked.connect(self.add_folder)
         self.remove_folder_button.clicked.connect(self.remove_folder)
         self.folder_list_widget.currentItemChanged.connect(self.update_rule_inputs)
-        self.edit_rule_button.clicked.connect(self.open_rule_editor_dialog) # Activated this connection
-        # Connections for old inline rule editor are removed:
-        # self.age_spinbox.valueChanged.connect(self.save_rule_changes)
-        # self.pattern_lineedit.editingFinished.connect(self.save_rule_changes)
-        # self.useRegexCheckbox.stateChanged.connect(self.save_rule_changes)
-        # self.rule_logic_combo.currentIndexChanged.connect(self.save_rule_changes)
-        # self.actionComboBox.currentIndexChanged.connect(self.save_rule_changes)
+        self.age_spinbox.valueChanged.connect(self.save_rule_changes)
+        self.pattern_lineedit.editingFinished.connect(self.save_rule_changes) # Save when focus lost or Enter pressed
+        self.useRegexCheckbox.stateChanged.connect(self.save_rule_changes) # Connect checkbox
+        self.rule_logic_combo.currentIndexChanged.connect(self.save_rule_changes) # Connect new combo box
+        self.actionComboBox.currentIndexChanged.connect(self.save_rule_changes) # Connect action combo box
         self.start_button.clicked.connect(self.start_monitoring)
         self.stop_button.clicked.connect(self.stop_monitoring)
         self.settings_button.clicked.connect(self.open_settings_dialog)
@@ -160,9 +179,19 @@ class ConfigWindow(QWidget):
                     row = self.folder_list_widget.row(current_item)
                     self.folder_list_widget.takeItem(row)
                     self.log_queue.put(f"INFO: Removed folder: {path}")
-                    # Disable "Edit Rule" button if no folder is selected (and no other item is auto-selected)
-                    if self.folder_list_widget.currentItem() is None: # More robust check
-                        self.edit_rule_button.setEnabled(False)
+                    # Clear/disable inputs if no item is selected
+                    if self.folder_list_widget.count() == 0:
+                         self.age_spinbox.setEnabled(False)
+                         self.pattern_lineedit.setEnabled(False)
+                         self.rule_logic_combo.setEnabled(False) # Disable logic combo
+                         self.useRegexCheckbox.setEnabled(False) # Disable regex checkbox
+                         self.actionComboBox.setEnabled(False) # Disable action combo box
+                         self.age_spinbox.setValue(0)
+                         self.pattern_lineedit.clear()
+                         self.useRegexCheckbox.setChecked(False) # Uncheck regex checkbox
+                         self.rule_logic_combo.setCurrentIndex(0) # Reset logic combo
+                         self.actionComboBox.setCurrentIndex(0) # Reset action combo box
+
                 else:
                      QMessageBox.warning(self, "Error", f"Could not remove folder '{path}' from configuration.")
         else:
@@ -170,55 +199,112 @@ class ConfigWindow(QWidget):
 
     @pyqtSlot(QListWidgetItem, QListWidgetItem)
     def update_rule_inputs(self, current: QListWidgetItem, previous: QListWidgetItem):
-        """Enable/disable the 'Edit Rule' button based on folder selection."""
+        """Update rule input fields when folder selection changes."""
         if current:
-            self.edit_rule_button.setEnabled(True)
-        else:
-            self.edit_rule_button.setEnabled(False)
+            path = current.text()
+            rule = self.config_manager.get_folder_rule(path)
+            if rule:
+                # Block signals temporarily to prevent save_rule_changes from firing
+                self.age_spinbox.blockSignals(True)
+                self.pattern_lineedit.blockSignals(True)
+                self.rule_logic_combo.blockSignals(True)
+                self.useRegexCheckbox.blockSignals(True)
+                self.actionComboBox.blockSignals(True) # Block actionComboBox signals
 
-    # save_rule_changes method is entirely removed. Rule saving is now handled by RuleEditorDialog.
+                self.age_spinbox.setValue(rule.get('age_days', 0))
+                self.pattern_lineedit.setText(rule.get('pattern', '*.*'))
+                self.rule_logic_combo.setCurrentText(rule.get('rule_logic', 'OR'))
+                self.useRegexCheckbox.setChecked(rule.get('use_regex', False)) # Load use_regex
+
+                action_value = rule.get('action', 'move')
+                action_display_map = {
+                    "move": "Move",
+                    "copy": "Copy",
+                    "delete_to_trash": "Delete to Trash",
+                    "delete_permanently": "Delete Permanently"
+                }
+                self.actionComboBox.setCurrentText(action_display_map.get(action_value, "Move"))
+
+                self.age_spinbox.setEnabled(True)
+                self.pattern_lineedit.setEnabled(True)
+                self.rule_logic_combo.setEnabled(True)
+                self.useRegexCheckbox.setEnabled(True) # Enable checkbox
+                self.actionComboBox.setEnabled(True) # Enable actionComboBox
+
+                self.age_spinbox.blockSignals(False)
+                self.pattern_lineedit.blockSignals(False)
+                self.rule_logic_combo.blockSignals(False)
+                self.useRegexCheckbox.blockSignals(False)
+                self.actionComboBox.blockSignals(False) # Unblock actionComboBox signals
+            else:
+                # Should not happen if list is synced with config, but handle defensively
+                self.age_spinbox.setEnabled(False)
+                self.pattern_lineedit.setEnabled(False)
+                self.rule_logic_combo.setEnabled(False)
+                self.useRegexCheckbox.setEnabled(False) # Disable checkbox
+                self.actionComboBox.setEnabled(False) # Disable actionComboBox
+                self.age_spinbox.setValue(0)
+                self.pattern_lineedit.clear()
+                self.rule_logic_combo.setCurrentIndex(0)
+                self.useRegexCheckbox.setChecked(False) # Uncheck checkbox
+                self.actionComboBox.setCurrentIndex(0) # Reset actionComboBox
+        else:
+            # No item selected
+            self.age_spinbox.setEnabled(False)
+            self.pattern_lineedit.setEnabled(False)
+            self.rule_logic_combo.setEnabled(False)
+            self.useRegexCheckbox.setEnabled(False) # Disable checkbox
+            self.actionComboBox.setEnabled(False) # Disable actionComboBox
+            self.age_spinbox.setValue(0)
+            self.pattern_lineedit.clear()
+            self.rule_logic_combo.setCurrentIndex(0)
+            self.useRegexCheckbox.setChecked(False) # Uncheck checkbox
+            self.actionComboBox.setCurrentIndex(0) # Reset actionComboBox
 
     @pyqtSlot()
-    def open_rule_editor_dialog(self):
-        """Open the Rule Editor dialog for the selected folder."""
+    def save_rule_changes(self):
+        """Save the current rule input values for the selected folder."""
         current_item = self.folder_list_widget.currentItem()
-        if not current_item:
-            QMessageBox.information(self, "No Selection", "Please select a folder to edit its rule.")
-            return
+        if current_item:
+            path = current_item.text()
+            age = self.age_spinbox.value()
+            pattern = self.pattern_lineedit.text()
+            rule_logic = self.rule_logic_combo.currentText()
+            use_regex = self.useRegexCheckbox.isChecked()
 
-        path = current_item.text()
-        # Get the rule. It's possible get_folder_rule returns just the rule part,
-        # ensure 'path' is part of the dict for the dialog.
-        rule_data = self.config_manager.get_folder_rule(path)
+            action_text = self.actionComboBox.currentText()
+            action_map = {
+                "Move": "move",
+                "Copy": "copy",
+                "Delete to Trash": "delete_to_trash",
+                "Delete Permanently": "delete_permanently"
+            }
+            action_value = action_map.get(action_text, "move")
 
-        if rule_data is None: # Should ideally not happen if folder exists
-            self.log_queue.put(f"WARNING: No rule found for {path} when opening editor. Creating default for editor.")
-            # This is a new folder or inconsistent state, provide a default rule structure
-            # The RuleEditorDialog expects 'path' in current_rule_data
-            rule_data = {'path': path, 'age_days': 0, 'pattern': '*.*', 'rule_logic': 'OR', 'use_regex': False, 'action': 'move'}
-        elif 'path' not in rule_data:
-            rule_data['path'] = path # Ensure path is included
+            # Show warning for permanent delete
+            if action_value == "delete_permanently":
+                # Check if this is a new selection or already saved.
+                # This check prevents the warning from showing every time save_rule_changes is called
+                # if the user has already confirmed it (e.g. by changing another field).
+                # A more robust way would be to only show this if currentText() just changed to "Delete Permanently".
+                # For now, we check against the config to see if it was already "delete_permanently".
+                # This means the warning appears when user selects it, and if they then change another rule aspect
+                # while "Delete Permanently" is still selected, it might show again.
+                # A better UX would be to connect this warning to the currentIndexChanged signal specifically for this option.
+                # However, sticking to the prompt's placement in save_rule_changes:
+                current_rule = self.config_manager.get_folder_rule(path)
+                if not current_rule or current_rule.get('action') != "delete_permanently":
+                    QMessageBox.warning(self, "Permanent Delete Warning",
+                                        "Warning: 'Delete Permanently' will erase files irreversibly. "
+                                        "These files cannot be recovered from the Recycle Bin. "
+                                        "Ensure this rule is configured carefully.",
+                                        QMessageBox.StandardButton.Ok)
 
-        dialog = RuleEditorDialog(current_rule_data=rule_data, parent=self)
-        if dialog.exec() == QDialog.DialogCode.Accepted:
-            new_rule_data = dialog.get_rule_data()
-            # new_rule_data contains 'path' which is the key for update_folder_rule
-            if self.config_manager.update_folder_rule(
-                path=new_rule_data['path'], # Use path from new_rule_data as it's the key
-                age_days=new_rule_data['age_days'],
-                pattern=new_rule_data['pattern'],
-                rule_logic=new_rule_data['rule_logic'],
-                use_regex=new_rule_data['use_regex'],
-                action=new_rule_data['action']
-            ):
-                self.log_queue.put(f"INFO: Updated rules for {new_rule_data['path']} "
-                                   f"(Action: {new_rule_data['action']}, Logic: {new_rule_data['rule_logic']}, "
-                                   f"Pattern: '{new_rule_data['pattern']}', Regex: {new_rule_data['use_regex']}, "
-                                   f"Age: {new_rule_data['age_days']})")
+            if self.config_manager.update_folder_rule(path, age, pattern, rule_logic, use_regex, action_value): # Pass action_value
+                 self.log_queue.put(f"INFO: Updated rules for {path} (Logic: {rule_logic}, Regex: {use_regex}, Action: {action_value})")
             else:
-                # This usually means the path wasn't found in the config, which is unlikely if we just got it.
-                self.log_queue.put(f"ERROR: Failed to update rules for {new_rule_data['path']} via RuleEditorDialog.")
-                QMessageBox.critical(self, "Error", f"Failed to update rule for {new_rule_data['path']}.")
+                 # Should not happen if item exists
+                 self.log_queue.put(f"ERROR: Failed to update rules for {path} (not found in config?)")
 
     @pyqtSlot()
     def open_settings_dialog(self):
@@ -281,8 +367,7 @@ class ConfigWindow(QWidget):
 
         self.monitoring_worker = MonitoringWorker(
             self.config_manager,
-            self.log_queue,
-            self.tray_icon # Pass tray_icon to worker
+            self.log_queue
         )
         self.monitoring_worker.start()
         # self.worker_status will be updated by message from worker, then _update_ui_for_status_and_mode

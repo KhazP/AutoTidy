@@ -111,18 +111,9 @@ class UndoManager:
 
     def undo_action(self, action_data: dict):
         action_taken = action_data.get("action_taken")
-        original_path_str = action_data.get("original_path") # Keep for logging, might be None
-        destination_path_str = action_data.get("destination_path") # Keep for logging, might be None
-
-        if not action_taken:
-            return False, "Error: Missing 'action_taken' in action data."
-
-        # Handle simulated actions first
-        if action_taken.startswith("SIMULATED_"):
-            return True, f"Action '{action_taken}' was simulated, no undo operation needed for original: '{original_path_str}', destination: '{destination_path_str}'."
 
         if action_taken == "MOVED":
-            # original_path_str and destination_path_str already fetched
+            original_path_str = action_data.get("original_path")
             destination_path_str = action_data.get("destination_path")
 
             if not original_path_str or not destination_path_str:
@@ -133,24 +124,23 @@ class UndoManager:
 
             try:
                 if destination_path.exists():
-                    # Check if original_path is a directory; if so, the file can be moved into it.
-                    # If original_path itself exists as a file, it's a conflict.
-                    final_original_path = original_path
-                    if original_path.is_dir():
-                        final_original_path = original_path / destination_path.name
+                    if original_path.exists():
+                        # This case needs careful handling.
+                        # If original_path is a directory, we might be able to move into it.
+                        # If original_path is a file, it's a conflict.
+                        # For now, let's be conservative and not overwrite.
+                        return False, f"Error: Original path {original_path} already exists. Cannot move {destination_path} back without overwriting."
 
-                    if final_original_path.exists() and final_original_path.is_file():
-                         return False, f"Error: Original path target {final_original_path} already exists as a file. Cannot move {destination_path} back without overwriting."
+                    # Ensure parent directory of original_path exists for the move back
+                    original_path.parent.mkdir(parents=True, exist_ok=True)
 
-                    # Ensure parent directory of final_original_path exists for the move back
-                    final_original_path.parent.mkdir(parents=True, exist_ok=True)
-
-                    shutil.move(str(destination_path), str(final_original_path))
-                    return True, f"Successfully moved {destination_path} back to {final_original_path}"
+                    shutil.move(str(destination_path), str(original_path))
+                    return True, f"Successfully moved {destination_path} back to {original_path}"
                 else:
-                    return False, f"Error: Source file {destination_path} (from previous destination) does not exist. Cannot undo move."
+                    return False, f"Error: Destination path {destination_path} does not exist. Cannot undo move."
 
-            except FileNotFoundError: # Should be caught by destination_path.exists() but as safeguard
+            except FileNotFoundError:
+                # This message is already specific and good.
                 return False, f"Error: File not found during undo. Source: {destination_path} or Target Parent: {original_path.parent}"
             except PermissionError:
                 return False, f"Error: Permission denied during undo operation on '{destination_path}' or '{original_path}'."
@@ -158,39 +148,32 @@ class UndoManager:
                 return False, f"OS error during undo ({action_taken}) on '{destination_path}' or '{original_path}': {e}"
 
         elif action_taken == "COPIED":
-            # destination_path_str already fetched
+            # Undoing a copy means deleting the copied file (destination_path)
+            destination_path_str = action_data.get("destination_path")
             if not destination_path_str:
-                return False, "Error: Missing destination path for COPIED action. Cannot undo."
+                return False, "Error: Missing destination path for COPIED action."
 
             destination_path = Path(destination_path_str)
             try:
-                if destination_path.is_file():
+                if destination_path.is_file(): # Make sure it's a file before deleting
                     os.remove(destination_path)
                     return True, f"Successfully deleted copied file: {destination_path}"
                 elif not destination_path.exists():
-                    return False, f"Error: Copied file {destination_path} does not exist (already deleted or moved). Cannot undo copy."
-                else: # It's a directory or other type
+                     return False, f"Error: Copied file {destination_path} does not exist. Cannot undo copy."
+                else: # It's a directory or other, don't attempt to delete with os.remove
                     return False, f"Error: Destination {destination_path} is not a file. Cannot undo copy with os.remove."
             except FileNotFoundError: # Should be caught by exists() check, but for safety
-                return False, f"Error: Copied file '{destination_path}' not found during deletion (should have been caught by exists check)."
+                return False, f"Error: Copied file '{destination_path}' not found during deletion."
             except PermissionError:
-                return False, f"Error: Permission denied trying to delete copied file '{destination_path}'."
-            except OSError as e: # Catch other OS-level errors like disk issues
+                return False, f"Error: Permission denied trying to delete '{destination_path}'."
+            except OSError as e:
                 return False, f"OS error deleting copied file '{destination_path}': {e}"
 
-        elif action_taken == "DELETED_TO_TRASH":
-            # For now, this is a placeholder. Restoring from trash is OS-dependent.
-            message = (f"Undo for '{action_taken}' on file '{original_path_str}' is not automatically implemented. "
-                       "Please check your system's Recycle Bin or Trash for the file.")
-            # Log this as a warning or info if a logging mechanism is available here.
-            # For now, returning it in the message is sufficient for the UI.
-            return False, message # False because the action wasn't automatically undone
-
-        elif action_taken == "DELETED_PERMANENTLY":
-            return False, f"Action '{action_taken}' on file '{original_path_str}' cannot be undone as it was a permanent deletion."
-
+        # Placeholder for other actions like DELETED_TO_TRASH or DELETED_PERMANENTLY
+        # Undoing DELETED_PERMANENTLY is not possible.
+        # Undoing DELETED_TO_TRASH would require interacting with the trash, which is platform-specific.
         else:
-            return False, f"Undo not supported or action type unknown for: '{action_taken}' on file '{original_path_str}'."
+            return False, f"Undo not supported for action: {action_taken}"
 
     def undo_batch(self, run_id: str):
         actions_to_undo = self.get_run_actions(run_id)

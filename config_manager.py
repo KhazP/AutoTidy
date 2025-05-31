@@ -21,16 +21,11 @@ class ConfigManager:
             'folders': [],
             'settings': {
                 'start_on_login': False,
-                # 'check_interval_seconds': 3600, # Removed, superseded by new schedule settings
+                'check_interval_seconds': 3600, # Old setting, might be replaced by new schedule settings
                 'archive_path_template': '_Cleanup/{YYYY}-{MM}-{DD}',
-                'schedule_type': 'interval',      # 'interval', 'daily', 'weekly'
-                'interval_minutes': 60,         # For 'interval' type
-                'specific_time': '10:00',       # For 'daily' or 'weekly' type (HH:MM format)
-                'days_of_week': [],             # For 'weekly' type (e.g., ["monday", "friday"])
-                'dry_run_mode': False,
-                'notify_on_scan_completion': False, # New notification setting
-                'notify_on_errors': True,           # New notification setting
-                'notify_on_actions_summary': True   # New notification setting
+                'schedule_type': 'interval',  # Default schedule type
+                'interval_minutes': 60,  # Default interval in minutes
+                'dry_run_mode': False  # Default dry run mode
             }
         }
         self.config = self._load_config()
@@ -207,68 +202,19 @@ class ConfigManager:
         """Returns the schedule configuration."""
         settings = self.config.setdefault('settings', {})
         default_settings = self.default_config.get('settings', {})
-        # Ensure all schedule-related keys are fetched, using defaults if necessary
-        schedule_config = {
-            'type': settings.get('schedule_type', default_settings.get('schedule_type')),
-            'interval_minutes': settings.get('interval_minutes', default_settings.get('interval_minutes')),
-            'specific_time': settings.get('specific_time', default_settings.get('specific_time')),
-            'days_of_week': settings.get('days_of_week', default_settings.get('days_of_week', [])),
+        return {
+            'type': settings.get('schedule_type', default_settings.get('schedule_type', 'interval')),
+            'interval_minutes': settings.get('interval_minutes', default_settings.get('interval_minutes', 60))
         }
-        return schedule_config
 
-    def set_schedule_config(self, schedule_config: dict):
-        """
-        Sets the schedule configuration.
-        Args:
-            schedule_config: A dictionary with keys 'type', 'interval_minutes',
-                             'specific_time', 'days_of_week'.
-        """
-        default_settings = self.default_config.get('settings', {})
+    def set_schedule_config(self, schedule_type: str, interval_minutes: int):
+        """Sets the schedule configuration."""
+        # Basic validation for interval_minutes
+        if not isinstance(interval_minutes, int) or interval_minutes < 1:
+            interval_minutes = self.default_config.get('settings', {}).get('interval_minutes', 60)
 
-        # Validate and set schedule_type
-        schedule_type = schedule_config.get('type', default_settings.get('schedule_type'))
-        if schedule_type not in ['interval', 'daily', 'weekly']:
-            print(f"Warning: Invalid schedule type '{schedule_type}'. Defaulting to '{default_settings.get('schedule_type')}'.", file=sys.stderr)
-            schedule_type = default_settings.get('schedule_type')
-        self.set_setting('schedule_type', schedule_type)
-
-        # Validate and set interval_minutes (only relevant if type is 'interval')
-        if schedule_type == 'interval':
-            interval_minutes = schedule_config.get('interval_minutes', default_settings.get('interval_minutes'))
-            if not isinstance(interval_minutes, int) or interval_minutes < 1:
-                print(f"Warning: Invalid interval_minutes '{interval_minutes}'. Defaulting to '{default_settings.get('interval_minutes')}'.", file=sys.stderr)
-                interval_minutes = default_settings.get('interval_minutes')
-            self.set_setting('interval_minutes', interval_minutes)
-        else:
-            # Store a default or None if not interval type, to avoid carrying over old values if type changes
-            self.set_setting('interval_minutes', default_settings.get('interval_minutes'))
-
-
-        # Validate and set specific_time (relevant if type is 'daily' or 'weekly')
-        if schedule_type in ['daily', 'weekly']:
-            specific_time = schedule_config.get('specific_time', default_settings.get('specific_time'))
-            # Basic time format validation (HH:MM)
-            import re # Import re locally for this validation
-            if not isinstance(specific_time, str) or not re.fullmatch(r"([01]\d|2[0-3]):([0-5]\d)", specific_time):
-                print(f"Warning: Invalid specific_time format '{specific_time}'. Defaulting to '{default_settings.get('specific_time')}'.", file=sys.stderr)
-                specific_time = default_settings.get('specific_time')
-            self.set_setting('specific_time', specific_time)
-        else:
-            self.set_setting('specific_time', default_settings.get('specific_time'))
-
-
-        # Validate and set days_of_week (only relevant if type is 'weekly')
-        if schedule_type == 'weekly':
-            days_of_week = schedule_config.get('days_of_week', default_settings.get('days_of_week'))
-            valid_days = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
-            if not isinstance(days_of_week, list) or not all(day.lower() in valid_days for day in days_of_week):
-                print(f"Warning: Invalid days_of_week value '{days_of_week}'. Defaulting to empty list.", file=sys.stderr)
-                days_of_week = [] # Default to empty list if validation fails for weekly
-            # Ensure days are stored in lowercase for consistency, though SettingsDialog seems to use lowercase already
-            self.set_setting('days_of_week', [day.lower() for day in days_of_week])
-        else:
-             self.set_setting('days_of_week', default_settings.get('days_of_week', []))
-
+        self.set_setting('schedule_type', schedule_type) # For now, always 'interval'
+        self.set_setting('interval_minutes', interval_minutes)
 
     def get_dry_run_mode(self) -> bool:
         """Returns the current state of dry run mode."""
@@ -281,22 +227,3 @@ class ConfigManager:
         if not isinstance(enabled, bool): # Basic type validation
             enabled = False # Default to False if invalid type
         self.set_setting('dry_run_mode', enabled)
-
-    # --- Notification Settings Getters ---
-    def get_notify_on_scan_completion(self) -> bool:
-        """Returns whether to notify when a scan cycle completes."""
-        settings = self.config.setdefault('settings', {})
-        default_settings = self.default_config.get('settings', {})
-        return settings.get('notify_on_scan_completion', default_settings.get('notify_on_scan_completion', False))
-
-    def get_notify_on_errors(self) -> bool:
-        """Returns whether to notify on significant errors."""
-        settings = self.config.setdefault('settings', {})
-        default_settings = self.default_config.get('settings', {})
-        return settings.get('notify_on_errors', default_settings.get('notify_on_errors', True))
-
-    def get_notify_on_actions_summary(self) -> bool:
-        """Returns whether to notify with a summary of actions after a scan."""
-        settings = self.config.setdefault('settings', {})
-        default_settings = self.default_config.get('settings', {})
-        return settings.get('notify_on_actions_summary', default_settings.get('notify_on_actions_summary', True))
