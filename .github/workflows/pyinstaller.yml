@@ -28,7 +28,7 @@ jobs:
 
       # Optionally, upload the dist folder as an artifact
       - name: Upload dist folder
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: AutoTidy-dist
           path: dist/ 
