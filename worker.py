@@ -6,21 +6,22 @@ import sys
 from pathlib import Path
 
 from config_manager import ConfigManager
-from utils import check_file, process_file_action # Updated import
+from utils import check_file, process_file_action
+from history_manager import HistoryManager # Import HistoryManager
 
-# DEFAULT_CHECK_INTERVAL_SECONDS = 3600 # No longer needed here
+# DEFAULT_CHECK_INTERVAL_SECONDS = 3600
 
 class MonitoringWorker(threading.Thread):
     """Worker thread for monitoring folders and organizing files."""
 
     # Removed check_interval from __init__
     def __init__(self, config_manager: ConfigManager, log_queue: queue.Queue):
-        super().__init__(daemon=True) # Daemon threads exit when main thread exits
+        super().__init__(daemon=True)
         self.config_manager = config_manager
         self.log_queue = log_queue
-        # self.check_interval = check_interval # Removed
         self._stop_event = threading.Event()
-        self.running = False # Track running state
+        self.running = False
+        self.history_manager = HistoryManager(self.config_manager) # Instantiate HistoryManager
 
     def run(self):
         """Main loop for the worker thread."""
@@ -77,7 +78,17 @@ class MonitoringWorker(threading.Thread):
 
                              if item.is_file():
                                 if check_file(item, age_days, pattern, use_regex):
-                                    success, message = process_file_action(item, monitored_path, archive_template, action_to_perform, is_dry_run) # Pass is_dry_run
+                                    success, message = process_file_action(
+                                        item,
+                                        monitored_path,
+                                        archive_template,
+                                        action_to_perform,
+                                        is_dry_run,
+                                        pattern, # rule_pattern
+                                        age_days, # rule_age_days
+                                        use_regex, # rule_use_regex
+                                        self.history_manager.log_action # history_logger_callable
+                                    )
                                     self.log_queue.put(f"{'INFO' if success else 'ERROR'}: {message}")
                                     if success:
                                         files_processed_count += 1

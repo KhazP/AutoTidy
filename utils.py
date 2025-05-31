@@ -52,9 +52,20 @@ def check_file(file_path: Path, age_days: int, pattern: str, use_regex: bool) ->
 
     return False # Does not match any criteria
 
-def process_file_action(file_path: Path, monitored_folder_path: Path, archive_path_template: str, action: str, dry_run: bool) -> tuple[bool, str]:
+def process_file_action(
+    file_path: Path,
+    monitored_folder_path: Path,
+    archive_path_template: str,
+    action: str,
+    dry_run: bool,
+    rule_pattern: str, # New parameter for history logging
+    rule_age_days: int,  # New parameter for history logging
+    rule_use_regex: bool, # New parameter for history logging
+    history_logger_callable # New parameter for history logging
+) -> tuple[bool, str]:
     """
-    Processes a file by moving, copying, or deleting it based on the provided template and action, supporting dry run.
+    Processes a file by moving, copying, or deleting it based on the provided template and action,
+    supporting dry run and logging the action to history.
 
     Args:
         file_path: Path object of the file to process.
@@ -62,6 +73,10 @@ def process_file_action(file_path: Path, monitored_folder_path: Path, archive_pa
         archive_path_template: String template for the archive path (used for move/copy).
         action: The action to perform ("move", "copy", "delete_to_trash", "delete_permanently").
         dry_run: If True, simulate actions instead of performing them.
+        rule_pattern: Pattern from the rule that matched this file.
+        rule_age_days: Age from the rule that matched this file.
+        rule_use_regex: Boolean, if regex was used for the pattern.
+        history_logger_callable: Callable (e.g., HistoryManager.log_action) to log the action.
 
     Returns:
         A tuple (success: bool, message: str).
@@ -112,7 +127,15 @@ def process_file_action(file_path: Path, monitored_folder_path: Path, archive_pa
                     temp_target_file_path = target_base_dir / f"{filename_stem}_{counter}{file_ext}"
                     counter += 1
                     if counter > 100: # Safety break
-                        return False, f"Error: Too many filename collisions for {filename_full} in {target_base_dir}"
+                        message = f"Error: Too many filename collisions for {filename_full} in {target_base_dir}"
+                        log_data_collision = {
+                            "original_path": str(file_path), "action_taken": action.upper() + "_ERROR_COLLISION",
+                            "destination_path": str(target_base_dir / filename_full), "monitored_folder": str(monitored_folder_path),
+                            "rule_pattern": rule_pattern, "rule_age_days": rule_age_days, "rule_use_regex": rule_use_regex,
+                            "rule_action_config": action, "status": "FAILURE", "details": message
+                        }
+                        history_logger_callable(log_data_collision)
+                        return False, message
                 target_file_path = temp_target_file_path # Update target_file_path with non-colliding name for actual ops
             elif dry_run and target_file_path.exists(): # For dry run, if initial path exists, simulate one step of collision avoidance
                 target_file_path = target_base_dir / f"{filename_stem}_1{file_ext}"
@@ -121,56 +144,100 @@ def process_file_action(file_path: Path, monitored_folder_path: Path, archive_pa
             relative_target_path = target_base_dir.relative_to(monitored_folder_path) / target_file_path.name
 
             if dry_run:
-                log_action_verb = "Would copy" if action == "copy" else "Would move"
-                # For dry run, mkdir is not called.
-                return True, f"[DRY RUN] {log_action_verb}: '{filename_full}' to '{relative_target_path}'"
+                action_taken_str = ("SIMULATED_" + action).upper()
+                log_action_verb_msg = "Would copy" if action == "copy" else "Would move"
+                message = f"[DRY RUN] {log_action_verb_msg}: '{filename_full}' to '{relative_target_path}'"
+                log_data = {
+                    "original_path": str(file_path), "action_taken": action_taken_str,
+                    "destination_path": str(target_file_path), "monitored_folder": str(monitored_folder_path),
+                    "rule_pattern": rule_pattern, "rule_age_days": rule_age_days, "rule_use_regex": rule_use_regex,
+                    "rule_action_config": action, "status": "SUCCESS", "details": message
+                }
+                history_logger_callable(log_data)
+                return True, message
 
             # Actual operations (not a dry run)
             target_base_dir.mkdir(parents=True, exist_ok=True)
 
-            # Re-evaluate target_file_path for actual operation to ensure it's the final one after collision check
-            # The collision check before dry_run check should have set target_file_path correctly.
-            # No, the collision check for non-dry run must be after mkdir potentially.
-            # Let's ensure target_file_path is determined correctly *before* the operation.
-            # The previous collision logic was fine, it determines the target_file_path before the shutil call.
-            # The key is that `target_base_dir.mkdir` only happens if not dry_run.
-
-            # The `target_file_path` determined by the loop (if not dry_run) or simulated (if dry_run and initial exists) is correct.
-
-            log_action_verb = ""
+            actual_log_action_verb_str = ""
             if action == "copy":
                 shutil.copy2(str(file_path), str(target_file_path))
-                log_action_verb = "Copied"
+                actual_log_action_verb_str = "COPIED"
             else: # move
                 shutil.move(str(file_path), str(target_file_path))
-                log_action_verb = "Moved"
+                actual_log_action_verb_str = "MOVED"
 
-            return True, f"{log_action_verb}: {filename_full} -> {relative_target_path}"
+            message = f"{actual_log_action_verb_str.capitalize()}: {filename_full} -> {relative_target_path}"
+            log_data = {
+                "original_path": str(file_path), "action_taken": actual_log_action_verb_str,
+                "destination_path": str(target_file_path), "monitored_folder": str(monitored_folder_path),
+                "rule_pattern": rule_pattern, "rule_age_days": rule_age_days, "rule_use_regex": rule_use_regex,
+                "rule_action_config": action, "status": "SUCCESS", "details": message
+            }
+            history_logger_callable(log_data)
+            return True, message
 
         elif action == "delete_to_trash":
-            if dry_run:
-                return True, f"[DRY RUN] Would send to trash: '{filename_full}'"
-            send2trash.send2trash(str(file_path))
-            return True, f"Success: Sent to trash: '{filename_full}'"
+            action_taken_str = "SIMULATED_DELETE_TO_TRASH" if dry_run else "DELETED_TO_TRASH"
+            details_message = f"[DRY RUN] Would send to trash: '{filename_full}'" if dry_run else f"Success: Sent to trash: '{filename_full}'"
+
+            if not dry_run:
+                send2trash.send2trash(str(file_path))
+
+            log_data = {"original_path": str(file_path), "action_taken": action_taken_str, "destination_path": None,
+                        "monitored_folder": str(monitored_folder_path), "rule_pattern": rule_pattern,
+                        "rule_age_days": rule_age_days, "rule_use_regex": rule_use_regex,
+                        "rule_action_config": action, "status": "SUCCESS", "details": details_message}
+            history_logger_callable(log_data)
+            return True, details_message
 
         elif action == "delete_permanently":
-            if dry_run:
-                return True, f"[DRY RUN] Would permanently delete: '{filename_full}' (irreversible)"
-            os.remove(str(file_path))
-            # Optional: Consider a more permanent log for this action if needed for auditing
-            # print(f"AUDIT: Permanently deleted '{file_path}' as per rule.", file=sys.stderr)
-            return True, f"Success: Permanently deleted: '{filename_full}' (irreversible)"
+            action_taken_str = "SIMULATED_DELETE_PERMANENTLY" if dry_run else "DELETED_PERMANENTLY"
+            details_message = f"[DRY RUN] Would permanently delete: '{filename_full}' (irreversible)" if dry_run else f"Success: Permanently deleted: '{filename_full}' (irreversible)"
 
-        else:
-            return False, f"Error: Unknown action '{action}' for file '{filename_full}'"
+            if not dry_run:
+                os.remove(str(file_path))
+
+            log_data = {"original_path": str(file_path), "action_taken": action_taken_str, "destination_path": None,
+                        "monitored_folder": str(monitored_folder_path), "rule_pattern": rule_pattern,
+                        "rule_age_days": rule_age_days, "rule_use_regex": rule_use_regex,
+                        "rule_action_config": action, "status": "SUCCESS", "details": details_message}
+            history_logger_callable(log_data)
+            return True, details_message
+
+        else: # Unknown action
+            message = f"Error: Unknown action '{action}' for file '{filename_full}'"
+            log_data = {"original_path": str(file_path), "action_taken": "UNKNOWN_ACTION", "destination_path": None,
+                        "monitored_folder": str(monitored_folder_path), "rule_pattern": rule_pattern,
+                        "rule_age_days": rule_age_days, "rule_use_regex": rule_use_regex,
+                        "rule_action_config": action, "status": "FAILURE", "details": message}
+            history_logger_callable(log_data)
+            return False, message
 
     except FileNotFoundError:
-        # This specific exception might be less relevant for send2trash if it fails before finding the file,
-        # but good to keep for os.remove and general shutil operations.
-        return False, f"Error: Source file not found for {action}: '{file_path.name}'"
+        message = f"Error: Source file not found for {action}: '{file_path.name}'"
+        action_taken_log = (("SIMULATED_" if dry_run else "") + action + "_ERROR_NOT_FOUND").upper()
+        log_data = {"original_path": str(file_path), "action_taken": action_taken_log, "destination_path": None,
+                    "monitored_folder": str(monitored_folder_path), "rule_pattern": rule_pattern,
+                    "rule_age_days": rule_age_days, "rule_use_regex": rule_use_regex,
+                    "rule_action_config": action, "status": "FAILURE", "details": message}
+        history_logger_callable(log_data)
+        return False, message
     except PermissionError:
-        # Catches permission errors for all operations including os.remove and send2trash (if applicable)
-        return False, f"Error: Permission denied for {action} on file '{file_path.name}'"
+        message = f"Error: Permission denied for {action} on file '{file_path.name}'"
+        action_taken_log = (("SIMULATED_" if dry_run else "") + action + "_ERROR_PERMISSION").upper()
+        log_data = {"original_path": str(file_path), "action_taken": action_taken_log, "destination_path": None,
+                    "monitored_folder": str(monitored_folder_path), "rule_pattern": rule_pattern,
+                    "rule_age_days": rule_age_days, "rule_use_regex": rule_use_regex,
+                    "rule_action_config": action, "status": "FAILURE", "details": message}
+        history_logger_callable(log_data)
+        return False, message
     except Exception as e:
-        # General catch-all for other errors, including potential send2trash specific ones like send2trash.TrashPermissionError
-        return False, f"Error performing {action} on '{file_path.name}': {e}"
+        message = f"Error performing {action} on '{file_path.name}': {e}"
+        action_taken_log = (("SIMULATED_" if dry_run else "") + action + "_ERROR_GENERAL").upper()
+        log_data = {"original_path": str(file_path), "action_taken": action_taken_log, "destination_path": None,
+                    "monitored_folder": str(monitored_folder_path), "rule_pattern": rule_pattern,
+                    "rule_age_days": rule_age_days, "rule_use_regex": rule_use_regex,
+                    "rule_action_config": action, "status": "FAILURE", "details": message}
+        history_logger_callable(log_data)
+        return False, message

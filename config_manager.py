@@ -30,6 +30,10 @@ class ConfigManager:
         }
         self.config = self._load_config()
 
+    def get_config_dir_path(self) -> Path: # Method used by HistoryManager
+        """Returns the application's configuration directory path."""
+        return self.config_dir
+
     def _get_config_dir(self) -> Path:
         """Determines the appropriate configuration directory based on OS."""
         if sys.platform == "win32":
