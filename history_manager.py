@@ -4,42 +4,66 @@ from pathlib import Path
 import sys # For potential error logging to stderr
 
 class HistoryManager:
-    """Manages logging of file actions to a history file."""
+    """
+    Manages the logging of file operations and other significant events to a
+    history file (`autotidy_history.jsonl`). Each log entry is a JSON object
+    written on a new line (JSONL format). This allows for easy parsing and
+    review of past actions performed by the application.
+    """
 
-    def __init__(self, config_manager): # config_manager will be an instance of ConfigManager
+    def __init__(self, config_manager): # config_manager should be an instance of ConfigManager
         """
         Initializes the HistoryManager.
 
+        It determines the path for the history log file based on the application's
+        configuration directory (obtained from `config_manager`) and ensures
+        that this directory exists.
+
         Args:
-            config_manager: The application's ConfigManager instance, used to determine log file path.
+            config_manager: The application's ConfigManager instance, used to
+                            resolve the path for the history log file.
         """
-        # In ConfigManager, we'll need a method like get_app_data_dir()
-        # For now, assuming it's the same as config_dir or a specific method for it.
-        # Let's assume config_manager has a method `get_config_dir_path()` that returns the Path object.
         self.history_file_path = config_manager.get_config_dir_path() / "autotidy_history.jsonl"
         self._ensure_history_dir_exists()
 
     def _ensure_history_dir_exists(self):
-        """Ensures the directory for the history log file exists."""
+        """
+        Ensures that the directory designated for storing the history log file exists.
+        If the directory does not exist, it attempts to create it.
+        Errors during directory creation are printed to stderr.
+        """
         try:
             self.history_file_path.parent.mkdir(parents=True, exist_ok=True)
         except Exception as e:
             # This is a critical point; if we can't create the log dir, logging will fail.
-            # For now, print to stderr. A more robust app might disable history logging or alert the user.
-            print(f"Error: Could not create history log directory {self.history_file_path.parent}: {e}", file=sys.stderr)
+            print(f"ERROR: Could not create history log directory {self.history_file_path.parent}: {e}", file=sys.stderr)
 
 
     def log_action(self, data: dict):
         """
-        Logs an action to the history file.
+        Logs a specific action or event to the history file.
+
+        The provided `data` dictionary is augmented with a UTC timestamp before
+        being written as a JSON string to a new line in the history file.
+        If the history directory does not exist (e.g., due to earlier creation failure),
+        an error is printed to stderr and the log action is skipped.
+        File I/O errors during logging are also printed to stderr.
 
         Args:
-            data: A dictionary containing the action details.
-                  The timestamp will be added/overwritten by this method.
+            data: A dictionary containing the details of the action to log.
+                  Expected keys might include:
+                  - `original_path` (str): The original path of the file being acted upon.
+                  - `action_taken` (str): The type of action (e.g., "MOVED", "DELETED").
+                  - `destination_path` (str, optional): The new path of the file.
+                  - `status` (str): "SUCCESS" or "FAILURE".
+                  - `details` (str): A message describing the outcome or error.
+                  - `run_id` (str): An identifier for the batch operation run.
+                  - (and other rule-specific context if available)
+                  A "timestamp" key will be added/overwritten with the current UTC time in ISO format.
         """
         if not self.history_file_path.parent.exists():
             # If directory creation failed earlier, don't attempt to log.
-            print(f"Error: History log directory does not exist. Cannot log action: {data.get('original_path', 'N/A')}", file=sys.stderr)
+            print(f"ERROR: History log directory does not exist. Cannot log action for: {data.get('original_path', 'N/A')}", file=sys.stderr)
             return
 
         data["timestamp"] = datetime.now(timezone.utc).isoformat()

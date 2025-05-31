@@ -5,10 +5,11 @@ import fnmatch
 import sys
 import re # Import re module
 import send2trash # Import send2trash
+import queue # Import queue module
 from datetime import datetime, timedelta
 from pathlib import Path
 
-def check_file(file_path: Path, age_days: int, pattern: str, use_regex: bool) -> bool:
+def check_file(file_path: Path, age_days: int, pattern: str, use_regex: bool, log_queue: queue.Queue) -> bool:
     """
     Checks if a file meets the criteria (age OR pattern).
 
@@ -17,6 +18,7 @@ def check_file(file_path: Path, age_days: int, pattern: str, use_regex: bool) ->
         age_days: Minimum age in days for the file to match.
         pattern: Filename pattern (fnmatch style or regex) to match.
         use_regex: Boolean indicating whether the pattern is a regular expression.
+        log_queue: Queue for logging messages.
 
     Returns:
         True if the file matches either condition, False otherwise.
@@ -36,7 +38,7 @@ def check_file(file_path: Path, age_days: int, pattern: str, use_regex: bool) ->
                     if re.fullmatch(pattern, file_path.name):
                         return True # Matches regex pattern criteria
                 except re.error as e:
-                    print(f"Error: Invalid regex pattern '{pattern}' for file {file_path.name}: {e}", file=sys.stderr)
+                    log_queue.put(f"ERROR: Invalid regex pattern '{pattern}' for file {file_path.name}: {e}")
                     # Treat as non-match if regex is invalid
             else:
                 if fnmatch.fnmatch(file_path.name, pattern):
@@ -44,10 +46,10 @@ def check_file(file_path: Path, age_days: int, pattern: str, use_regex: bool) ->
 
     except FileNotFoundError:
         # File might have been deleted between listing and checking
-        print(f"Warning: File not found during check: {file_path}", file=sys.stderr)
+        log_queue.put(f"WARNING: File not found during check: {file_path}")
         return False
     except Exception as e:
-        print(f"Error checking file {file_path}: {e}", file=sys.stderr)
+        log_queue.put(f"ERROR: Error checking file {file_path}: {e}")
         return False
 
     return False # Does not match any criteria
@@ -62,7 +64,8 @@ def process_file_action(
     rule_age_days: int,  # New parameter for history logging
     rule_use_regex: bool, # New parameter for history logging
     history_logger_callable, # New parameter for history logging
-    run_id: str # New parameter for batch operation run_id
+    run_id: str, # New parameter for batch operation run_id
+    log_queue: queue.Queue # New parameter for logging
 ) -> tuple[bool, str]:
     """
     Processes a file by moving, copying, or deleting it based on the provided template and action,
@@ -78,6 +81,8 @@ def process_file_action(
         rule_age_days: Age from the rule that matched this file.
         rule_use_regex: Boolean, if regex was used for the pattern.
         history_logger_callable: Callable (e.g., HistoryManager.log_action) to log the action.
+        run_id: Identifier for the current batch operation run.
+        log_queue: Queue for logging messages.
 
     Returns:
         A tuple (success: bool, message: str).
@@ -122,13 +127,24 @@ def process_file_action(
             # If we want to show the collided name in dry run, this needs to be inside the loop or after.
             # Let's calculate the final intended path for both dry and non-dry runs.
 
-            temp_target_file_path = target_file_path
-            if not dry_run: # Only check actual existence if not a dry run
+            # --- Filename Collision Avoidance Logic ---
+            # The goal is to find a unique filename in the target directory if the initial one already exists.
+            # `target_file_path` initially holds the ideal path based on the template.
+            # `temp_target_file_path` is used within the loop to test new filenames with an appended counter.
+
+            temp_target_file_path = target_file_path # Start with the ideal path.
+
+            # For actual operations (not dry run):
+            # If the file already exists at `temp_target_file_path`, append a counter `_N` to the filename
+            # (before the extension) and check again. Repeat until a unique name is found or the counter limit is hit.
+            # This involves actual filesystem checks (`.exists()`).
+            if not dry_run:
                 while temp_target_file_path.exists():
                     temp_target_file_path = target_base_dir / f"{filename_stem}_{counter}{file_ext}"
                     counter += 1
-                    if counter > 100: # Safety break
-                        message = f"Error: Too many filename collisions for {filename_full} in {target_base_dir}"
+                    if counter > 100: # Safety break to prevent infinite loops.
+                        message = f"Error: Too many filename collisions for {filename_full} in {target_base_dir}. Aborting move/copy."
+                        log_queue.put(f"ERROR: {message}") # Log to queue
                         log_data_collision = {
                             "original_path": str(file_path), "action_taken": action.upper() + "_ERROR_COLLISION",
                             "destination_path": str(target_base_dir / filename_full), "monitored_folder": str(monitored_folder_path),
@@ -137,10 +153,21 @@ def process_file_action(
                         }
                         history_logger_callable(log_data_collision)
                         return False, message
-                target_file_path = temp_target_file_path # Update target_file_path with non-colliding name for actual ops
-            elif dry_run and target_file_path.exists(): # For dry run, if initial path exists, simulate one step of collision avoidance
-                target_file_path = target_base_dir / f"{filename_stem}_1{file_ext}"
+                target_file_path = temp_target_file_path # Actual operations will use this potentially modified path.
 
+            # For dry run:
+            # Simulate a single collision check. If the ideal `target_file_path` *would* collide (i.e., it exists),
+            # then show the filename as it *would* be with `_1` appended. This gives the user an idea of the
+            # collision avoidance mechanism without performing multiple filesystem checks or modifying the actual
+            # `target_file_path` used for the dry run message (as the dry run should report the *intended* path
+            # and then note if a collision *would* occur and how it *would* be resolved).
+            # The message will indicate the initially intended path, and if it exists, we can enhance the message
+            # or rely on the fact that the displayed path might get a "_1" if it were a real run.
+            # For simplicity in the dry run message, we'll calculate the *final* path it would likely take.
+            elif dry_run and target_file_path.exists(): # If initial path exists during dry run
+                # Simulate one step of collision avoidance for the message
+                target_file_path = target_base_dir / f"{filename_stem}_1{file_ext}"
+            # --- End of Filename Collision Avoidance Logic ---
 
             relative_target_path = target_base_dir.relative_to(monitored_folder_path) / target_file_path.name
 
@@ -218,6 +245,7 @@ def process_file_action(
     except FileNotFoundError:
         message = f"Error: Source file not found for {action}: '{file_path.name}'"
         action_taken_log = (("SIMULATED_" if dry_run else "") + action + "_ERROR_NOT_FOUND").upper()
+        log_queue.put(f"ERROR: {message}") # Log to queue
         log_data = {"original_path": str(file_path), "action_taken": action_taken_log, "destination_path": None,
                     "monitored_folder": str(monitored_folder_path), "rule_pattern": rule_pattern,
                     "rule_age_days": rule_age_days, "rule_use_regex": rule_use_regex,
@@ -227,6 +255,7 @@ def process_file_action(
     except PermissionError:
         message = f"Error: Permission denied for {action} on file '{file_path.name}'"
         action_taken_log = (("SIMULATED_" if dry_run else "") + action + "_ERROR_PERMISSION").upper()
+        log_queue.put(f"ERROR: {message}") # Log to queue
         log_data = {"original_path": str(file_path), "action_taken": action_taken_log, "destination_path": None,
                     "monitored_folder": str(monitored_folder_path), "rule_pattern": rule_pattern,
                     "rule_age_days": rule_age_days, "rule_use_regex": rule_use_regex,
@@ -236,6 +265,7 @@ def process_file_action(
     except Exception as e:
         message = f"Error performing {action} on '{file_path.name}': {e}"
         action_taken_log = (("SIMULATED_" if dry_run else "") + action + "_ERROR_GENERAL").upper()
+        log_queue.put(f"ERROR: {message}") # Log to queue
         log_data = {"original_path": str(file_path), "action_taken": action_taken_log, "destination_path": None,
                     "monitored_folder": str(monitored_folder_path), "rule_pattern": rule_pattern,
                     "rule_age_days": rule_age_days, "rule_use_regex": rule_use_regex,
