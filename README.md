@@ -40,9 +40,9 @@ This tool tackles the inefficiency of manual sorting and periodic cleanups, allo
 * **Folder Monitoring**: Users can select one or more local folders for AutoTidy to watch.
 * **Rule-Based Organization**: Define rules for each folder based on:
     * **File Age**: Specify a minimum age (in days) for a file to be considered.
-    * **Filename Pattern**: Use Glob patterns (e.g., `*.tmp`, `screenshot*.png`) or Regular Expressions (e.g., `^report-\d{4}\.pdf$`) to identify files.
-* **Automated File Moving**: Files matching the combined age and pattern criteria (using configurable AND/OR logic) are automatically moved.
-* **Structured Archiving**: Moved files are organized into a user-configurable dated subfolder structure (default: `_Cleanup/YYYY-MM-DD`) within the monitored folder, making it easy to locate them later.
+    * **Filename Pattern**: Use wildcard patterns (e.g., `*.tmp`, `screenshot*.png`) to identify files.
+* **Automated File Moving**: Files matching *either* the age or pattern rule are automatically moved.
+* **Structured Archiving**: Moved files are organized into a dated subfolder structure (`_Cleanup/YYYY-MM-DD`) within the monitored folder, making it easy to locate them later.
 * **Background Operation**: Runs quietly in the system tray, performing checks periodically.
 * **User Control**: Start and stop the monitoring service via the UI or tray menu.
 * **Status & Logging**: View the current status (running/stopped) and a log of recent activities and errors in the configuration window.
@@ -56,18 +56,16 @@ This tool tackles the inefficiency of manual sorting and periodic cleanups, allo
     * Use the "Add Folder" button to select directories you want AutoTidy to monitor.
 2.  **Set Rules**: For each added folder:
     * Specify the **minimum file age** (in days). Files older than this will be targeted.
-    * Define a **filename pattern**.
-    * Choose the **pattern type**: Glob (standard wildcards like `*`, `?`) or Regex (full regular expression syntax).
-    * Select the **logic** to combine age and pattern: 'OR' (file matches if age OR pattern criteria are met) or 'AND' (file matches only if age AND pattern criteria are met).
-    * *Note: Changes to rules are saved automatically.*
+    * Define a **filename pattern** (e.g., `*.jpg`, `temp_*.*`). Files matching this pattern will be targeted.
+    * *Note: A file will be moved if it meets the age OR the pattern criteria.*
 3.  **Monitor**: Click "Start Monitoring" in the Configuration Window or via the tray menu.
     * AutoTidy's worker process begins running in the background.
     * It periodically (default: hourly) scans the configured folders.
 4.  **Organize**: When the worker scans a monitored folder:
     * It checks each file against the rules defined for that folder.
-    * If a file matches the combined criteria, AutoTidy moves it.
-    * The file is moved into a subfolder named `_Cleanup` within the monitored folder. The structure of subfolders within `_Cleanup` (e.g., `YYYY-MM-DD`, `YYYY/MM`, etc.) can be customized by the user in the Settings dialog using `strftime` format codes.
-    * If the `_Cleanup` or specified subdirectories don't exist, AutoTidy creates them.
+    * If a file matches (is older than the set age OR its name matches the pattern), AutoTidy moves it.
+    * The file is moved into a subfolder named `_Cleanup` within the monitored folder, further organized by date (e.g., `_Cleanup/YYYY-MM-DD/filename.ext`).
+    * If the `_Cleanup` or dated subdirectories don't exist, AutoTidy creates them.
 5.  **Feedback**:
     * The Configuration Window displays logs of actions (files moved, errors).
     * The status (Running/Stopped) is also visible.
@@ -106,9 +104,7 @@ To run the application:
 4.  **Define Rules**:
     * Select a folder from the "Monitored Folders" list.
     * Set the "Min Age (days)" (e.g., 7 for files older than a week).
-    * Enter a "Filename Pattern" (e.g., `*.log` for Glob, or `^image-.*\.png$` for Regex).
-    * Select the "Logic" (AND/OR) from the dropdown to determine how age and pattern rules are combined.
-    * Select the "Pattern Type" (Glob/Regex) from the dropdown to specify how the filename pattern is interpreted.
+    * Enter a "Filename Pattern" (e.g., `*.log`, `image-?.png`).
     * Changes to rules are saved automatically when you edit them.
 5.  **Start/Stop Monitoring**:
     * Use the "Start Monitoring" / "Stop Monitoring" buttons in the Configuration Window or the tray menu.
@@ -128,18 +124,14 @@ Settings are managed via two main interfaces:
 * **Add Folder Button**: Opens a dialog to choose a new folder to monitor.
 * **Remove Selected Button**: Removes the currently selected folder from the monitoring list.
 * **Min Age (days)**: Numeric input for the age rule.
-* **Filename Pattern**: Text input for the pattern rule.
-* **Logic**: Dropdown to select 'AND' or 'OR' logic for combining age and pattern rules.
-* **Pattern Type**: Dropdown to select whether the 'Filename Pattern' should be interpreted as a Glob (e.g., `*.txt`) or a Regular Expression (e.g., `^image\d+\.png$`).
+* **Filename Pattern**: Text input for the pattern rule (supports wildcards like `*` and `?`).
 * Configuration for folders and rules is saved automatically to a `config.json` file in your user's application data directory (e.g., `%APPDATA%/AutoTidy` on Windows, `~/.config/AutoTidy` on Linux).
 
 **2. Settings Dialog (for application-wide settings):**
 * Accessed via the "Settings" button in the Main Configuration Window.
 * **Start AutoTidy automatically on system login**: Checkbox to enable/disable autostart.
-* **Folder check interval**: Numeric input to set how often (in seconds) AutoTidy scans monitored folders.
-* **Archive subfolder format**: Text input field allowing users to define the subfolder structure within the `_Cleanup` directory using `strftime` format codes. For example, `"%Y-%m-%d"` (default) creates `YYYY-MM-DD`, while `"%Y/%m/%d_backup"` would create `YYYY/MM/DD_backup`.
-    * On Windows, autostart modifies the Registry.
-    * On Linux, autostart creates/removes a `.desktop` file in `~/.config/autostart/`.
+    * On Windows, this modifies the Registry.
+    * On Linux, this creates/removes a `.desktop` file in `~/.config/autostart/`.
 * Displays the application **Version**.
 * Settings are saved to the same `config.json` file.
 
@@ -183,6 +175,7 @@ Settings are managed via two main interfaces:
 
 * **Error Handling**: While basic error handling is in place (e.g., for permission errors, file not found), more granular error reporting and recovery mechanisms could be added.
 * **Performance on Very Large Folders**: Scanning extremely large directories with many files might take noticeable time, though it runs in a background thread.
+* **Complex Patterns**: Only `fnmatch` (shell-like wildcards) is supported for patterns, not full regular expressions.
 * **Resource Usage**: The background polling mechanism, while efficient, still consumes some system resources. The check interval is currently fixed.
 * **Archive Naming Collision**: If many files with the same name are moved on the same day, they are renamed with an incrementing counter (e.g., `file_1.txt`, `file_2.txt`). This is basic and could be improved.
 * **Symlinks/Shortcuts**: Behavior with symbolic links or shortcuts as monitored items or files within monitored folders might not be explicitly defined or tested. For MVP, it primarily targets regular files.
@@ -191,6 +184,8 @@ Settings are managed via two main interfaces:
 ---
 ## 🔮 Future Enhancements (Potential)
 
+* Support for Regular Expressions in filename patterns.
+* User-configurable archive subfolder structure (e.g., by year/month, file type).
 * Option to Copy files instead of Moving.
 * Option to Delete files (to Recycle Bin/Trash or permanently).
 * More advanced scheduling options (e.g., specific times, more frequent checks).

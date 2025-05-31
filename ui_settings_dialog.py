@@ -16,7 +16,6 @@ class SettingsDialog(QDialog):
         self.config_manager = config_manager
         self.initial_start_on_login = self.config_manager.get_setting("start_on_login", False)
         self.initial_check_interval = self.config_manager.get_setting("check_interval_seconds", 3600)
-        self.initial_archive_format = self.config_manager.get_setting("archive_structure_format", "%Y-%m-%d")
 
         self.setWindowTitle("AutoTidy Settings")
         self.setModal(True) # Block interaction with the main window
@@ -43,19 +42,6 @@ class SettingsDialog(QDialog):
         interval_layout.addWidget(self.interval_spinbox)
         layout.addLayout(interval_layout)
 
-        # --- Archive Subfolder Format ---
-        archive_format_layout = QHBoxLayout()
-        archive_format_label = QLabel("Archive subfolder format:")
-        self.archive_format_lineedit = QLineEdit()
-        self.archive_format_lineedit.setText(self.initial_archive_format)
-        self.archive_format_lineedit.setToolTip(
-            "Uses strftime format codes (e.g., %Y-%m-%d for 'YYYY-MM-DD', %Y/%m for 'YYYY/MM').\n"
-            "Common codes: %Y (year), %m (month), %d (day), %b (month abbr), %B (month name)."
-        )
-        archive_format_layout.addWidget(archive_format_label)
-        archive_format_layout.addWidget(self.archive_format_lineedit)
-        layout.addLayout(archive_format_layout)
-
         # --- Version Label ---
         version_label = QLabel(f"Version: {APP_VERSION}")
         version_label.setStyleSheet("color: grey;") # Optional: Make it less prominent
@@ -76,44 +62,28 @@ class SettingsDialog(QDialog):
         settings_changed = False
         new_start_on_login = self.autostart_checkbox.isChecked()
         new_check_interval = self.interval_spinbox.value()
-        new_archive_format = self.archive_format_lineedit.text()
 
         # Check if start_on_login changed
         if new_start_on_login != self.initial_start_on_login:
             self.config_manager.set_setting("start_on_login", new_start_on_login)
             settings_changed = True
             # Apply autostart setting - this part has side effects beyond just config saving
-            try:
-                # It's good practice to wrap operations that can fail, like OS interactions
-                set_autostart(new_start_on_login, APP_NAME)
-                self.initial_start_on_login = new_start_on_login # Update initial state only on success
-            except Exception as e: # Catch potential errors from set_autostart
-                 QMessageBox.warning(
+            success = set_autostart(new_start_on_login, APP_NAME)
+            if not success:
+                QMessageBox.warning(
                     self,
                     "Autostart Error",
-                    f"Failed to {'enable' if new_start_on_login else 'disable'} autostart: {e}. "
+                    f"Failed to {'enable' if new_start_on_login else 'disable'} autostart. "
                     f"Please check application logs or permissions."
                 )
-                 # Optionally revert checkbox if applying failed, or just log and inform user
-                 self.autostart_checkbox.setChecked(self.initial_start_on_login)
-
+            else:
+                self.initial_start_on_login = new_start_on_login # Update initial state
 
         # Check if check_interval_seconds changed
         if new_check_interval != self.initial_check_interval:
             self.config_manager.set_setting("check_interval_seconds", new_check_interval)
             self.initial_check_interval = new_check_interval # Update initial state
             settings_changed = True
-
-        # Check if archive_structure_format changed
-        if new_archive_format != self.initial_archive_format:
-            # Basic validation: ensure it's not empty, though strftime might have its own errors for invalid formats
-            if not new_archive_format.strip():
-                QMessageBox.warning(self, "Invalid Format", "Archive subfolder format cannot be empty. Using previous value.")
-                self.archive_format_lineedit.setText(self.initial_archive_format) # Revert
-            else:
-                self.config_manager.set_setting("archive_structure_format", new_archive_format)
-                self.initial_archive_format = new_archive_format # Update initial state
-                settings_changed = True
 
         # Save config if any setting changed
         if settings_changed:
