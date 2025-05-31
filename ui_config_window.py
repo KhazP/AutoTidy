@@ -10,6 +10,7 @@ from config_manager import ConfigManager
 from worker import MonitoringWorker
 from ui_settings_dialog import SettingsDialog
 from ui_history_viewer_dialog import HistoryViewerDialog # Import History Viewer
+from history_manager import HistoryManager # Import HistoryManager
 
 LOG_QUEUE_CHECK_INTERVAL_MS = 250
 
@@ -20,6 +21,7 @@ class ConfigWindow(QWidget):
         super().__init__()
         self.config_manager = config_manager
         self.log_queue = log_queue
+        self.history_manager = HistoryManager(self.config_manager) # Instantiate HistoryManager
         self.monitoring_worker: MonitoringWorker | None = None
         self.worker_status = "Stopped" # Track worker status
 
@@ -307,7 +309,8 @@ class ConfigWindow(QWidget):
     @pyqtSlot()
     def open_history_viewer(self):
         """Opens the history viewer dialog."""
-        dialog = HistoryViewerDialog(self.config_manager, self)
+        # Pass config_manager and history_manager
+        dialog = HistoryViewerDialog(self.config_manager, self.history_manager, self)
         dialog.exec()
 
     def _update_ui_for_status_and_mode(self):

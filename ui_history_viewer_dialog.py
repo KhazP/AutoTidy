@@ -1,18 +1,22 @@
 import json
+import shutil
 from pathlib import Path
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QTableWidget, QTableWidgetItem, QPushButton,
-    QAbstractItemView, QHBoxLayout, QHeaderView
+    QAbstractItemView, QHBoxLayout, QHeaderView, QMessageBox
 )
 from PyQt6.QtCore import Qt
+import constants # Assuming constants.py contains ACTION_MOVED and STATUS_SUCCESS
+
 # ConfigManager is not directly imported if only its path method is used via a passed instance.
 
 class HistoryViewerDialog(QDialog):
     """Dialog to view action history from the JSONL file."""
 
-    def __init__(self, config_manager, parent=None): # config_manager is an instance of ConfigManager
+    def __init__(self, config_manager, history_manager, parent=None): # config_manager and history_manager instances
         super().__init__(parent)
         self.config_manager = config_manager
+        self.history_manager = history_manager
 
         self.setWindowTitle("AutoTidy Action History")
         self.setMinimumSize(800, 400) # Set a reasonable minimum size
@@ -44,17 +48,147 @@ class HistoryViewerDialog(QDialog):
 
         # Buttons Layout
         buttons_layout = QHBoxLayout()
+
+        self.undoButton = QPushButton("Undo Selected Action")
+        self.undoButton.clicked.connect(self.handle_undo_action)
+        buttons_layout.addWidget(self.undoButton)
+
+        buttons_layout.addStretch(1) # Add stretch before refresh to push undo to left
+
         self.refreshButton = QPushButton("Refresh")
         self.refreshButton.clicked.connect(self.load_history)
         buttons_layout.addWidget(self.refreshButton)
-        buttons_layout.addStretch()
+
+        buttons_layout.addStretch(1) # Add stretch between refresh and close
+
         self.closeButton = QPushButton("Close")
         self.closeButton.clicked.connect(self.accept)
         buttons_layout.addWidget(self.closeButton)
 
         layout.addLayout(buttons_layout)
 
+        self.historyTable.itemSelectionChanged.connect(self.update_undo_button_state)
+
         self.load_history()
+        self.update_undo_button_state() # Initial state
+
+    def handle_undo_action(self):
+        selected_rows = self.historyTable.selectionModel().selectedRows()
+        if not selected_rows or len(selected_rows) != 1:
+            # This case should ideally be prevented by the button's enabled state,
+            # but as a safeguard:
+            QMessageBox.warning(self, "Undo Action", "Please select exactly one action to undo.")
+            return
+
+        selected_row_index = selected_rows[0].row()
+
+        try:
+            original_path_item = self.historyTable.item(selected_row_index, self.column_headers.index("Original Path"))
+            destination_path_item = self.historyTable.item(selected_row_index, self.column_headers.index("Destination Path"))
+
+            if not original_path_item or not destination_path_item:
+                QMessageBox.critical(self, "Error", "Could not retrieve path information for the selected action.")
+                return
+
+            original_path_str = original_path_item.text()
+            destination_path_str = destination_path_item.text()
+
+            if not original_path_str or not destination_path_str:
+                QMessageBox.critical(self, "Error", "Path information is missing for the selected action.")
+                return
+
+            original_path_target = Path(original_path_str)
+            destination_file = Path(destination_path_str)
+
+            # Pre-move checks
+            if not destination_file.exists():
+                QMessageBox.warning(self, "Undo Failed", f"The file to undo does not exist: {destination_file}")
+                self.load_history() # Refresh history, as the file's status might have changed
+                return
+
+            if original_path_target.exists():
+                if original_path_target.is_file():
+                    reply = QMessageBox.question(self, "Confirm Overwrite",
+                                                 f"The original file location '{original_path_target}' already exists. Overwrite?",
+                                                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                                                 QMessageBox.StandardButton.No)
+                    if reply == QMessageBox.StandardButton.No:
+                        return
+                elif original_path_target.is_dir():
+                    QMessageBox.critical(self, "Undo Failed",
+                                         f"Cannot restore file. The original path '{original_path_target}' is now a directory.")
+                    return
+
+            # Perform the move
+            try:
+                # Ensure parent directory of original_path_target exists
+                original_path_target.parent.mkdir(parents=True, exist_ok=True)
+
+                shutil.move(str(destination_file), str(original_path_target))
+
+                # Log the undo action
+                log_data = {
+                    "action_taken": constants.ACTION_UNDO_MOVE,
+                    "original_path": str(destination_file), # Path before undo (what was moved)
+                    "destination_path": str(original_path_target), # Path after undo (where it went)
+                    "status": constants.STATUS_SUCCESS,
+                    "details": f"Successfully undid previous move of '{destination_file.name}'. Moved from '{destination_file}' to '{original_path_target}'.",
+                }
+                self.history_manager.log_action(log_data)
+
+                QMessageBox.information(self, "Success", f"Action undone. File moved from '{destination_file}' back to '{original_path_target}'.")
+
+                self.load_history() # Refresh history to show the UNDO_MOVE entry
+
+            except (IOError, OSError) as e:
+                QMessageBox.critical(self, "Move Error", f"Error moving file: {e}")
+            except Exception as e:
+                QMessageBox.critical(self, "Unexpected Error", f"An unexpected error occurred: {e}")
+
+        except IndexError:
+             QMessageBox.critical(self, "Error", "Could not correctly interpret history data for undo.")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"An unexpected error occurred during undo preparation: {e}")
+        finally:
+            self.update_undo_button_state()
+
+
+    def update_undo_button_state(self):
+        selected_items = self.historyTable.selectedItems()
+        if not selected_items or len(self.historyTable.selectionModel().selectedRows()) != 1:
+            self.undoButton.setEnabled(False)
+            return
+
+        selected_row = self.historyTable.currentRow()
+        if selected_row < 0: # Should not happen if selected_items is not empty and 1 row selected
+            self.undoButton.setEnabled(False)
+            return
+
+        try:
+            action_item = self.historyTable.item(selected_row, self.column_headers.index("Action Taken"))
+            status_item = self.historyTable.item(selected_row, self.column_headers.index("Status"))
+
+            if action_item and status_item:
+                action_text = action_item.text()
+                status_text = status_item.text()
+
+                # Assuming constants.ACTION_MOVED and constants.STATUS_SUCCESS are defined
+                # e.g., ACTION_MOVED = "MOVED", STATUS_SUCCESS = "SUCCESS"
+                if action_text == constants.ACTION_MOVED and status_text == constants.STATUS_SUCCESS:
+                    self.undoButton.setEnabled(True)
+                else:
+                    self.undoButton.setEnabled(False)
+            else:
+                self.undoButton.setEnabled(False)
+        except IndexError:
+            # This might happen if column_headers doesn't contain "Action Taken" or "Status"
+            # Or if the row/column index is somehow out of bounds despite checks.
+            print("Error: Could not find 'Action Taken' or 'Status' column for undo logic.")
+            self.undoButton.setEnabled(False)
+        except Exception as e:
+            print(f"Error updating undo button state: {e}")
+            self.undoButton.setEnabled(False)
+
 
     def load_history(self):
         """Loads history from the JSONL file into the table."""
@@ -125,36 +259,43 @@ class HistoryViewerDialog(QDialog):
         timestamp_col_index = self.column_headers.index("Timestamp")
         if timestamp_col_index != -1:
             self.historyTable.sortByColumn(timestamp_col_index, Qt.SortOrder.DescendingOrder)
+        self.update_undo_button_state() # Update button state after loading history
 
 
 if __name__ == '__main__':
     # This is for direct testing of the dialog
     from PyQt6.QtWidgets import QApplication
     import sys
+    from history_manager import HistoryManager # Required for mock testing
 
-    # Mock ConfigManager for testing HistoryViewerDialog standalone
+    # Mock ConfigManager and HistoryManager for testing HistoryViewerDialog standalone
     class MockConfigManager:
         def get_config_dir_path(self):
             test_dir = Path(".") # Current directory for test
-            # Create a dummy history file for testing
+            # Create a dummy history file for testing if it doesn't exist
             dummy_history_file = test_dir / "autotidy_history.jsonl"
-            with open(dummy_history_file, 'w', encoding='utf-8') as f:
-                # Sample log entries
-                log1 = {"timestamp": "2023-01-01T10:00:00Z", "action_taken": "MOVED", "original_path": "/test/file1.txt", "status": "SUCCESS", "details": "Moved to /archive/file1.txt"}
-                log2 = {"timestamp": "2023-01-01T10:05:00Z", "action_taken": "DELETED_TO_TRASH", "original_path": "/test/file2.txt", "status": "SUCCESS", "details": "Sent to trash"}
-                log3 = {"timestamp": "2023-01-01T10:02:00Z", "action_taken": "SIMULATED_COPY", "original_path": "/test/file3.dat", "status": "SUCCESS", "details": "[DRY RUN] Would copy to /archive/file3.dat", "rule_age_days": 5, "rule_pattern": "*.dat"}
+            if not dummy_history_file.exists():
+                 with open(dummy_history_file, 'w', encoding='utf-8') as f:
+                    log1 = {"timestamp": "2023-01-01T10:00:00Z", "action_taken": "MOVED", "original_path": str(test_dir / "file1_original.txt"), "destination_path": str(test_dir / "file1_moved.txt"), "status": "SUCCESS", "details": "Moved to archive"}
+                    f.write(json.dumps(log1) + '\n')
+            # Create dummy files for undo testing
+            (test_dir / "file1_moved.txt").touch(exist_ok=True)
 
-                f.write(json.dumps(log1) + '\n')
-                f.write(json.dumps(log2) + '\n')
-                f.write(json.dumps(log3) + '\n')
             return test_dir
 
     app = QApplication(sys.argv)
-    # Ensure you have a ConfigManager instance or a mock
     mock_cm = MockConfigManager()
-    dialog = HistoryViewerDialog(mock_cm)
+    # HistoryManager needs a config_manager instance
+    mock_hm = HistoryManager(mock_cm)
+
+    dialog = HistoryViewerDialog(mock_cm, mock_hm) # Pass both mocks
     dialog.show()
     exit_code = app.exec()
-    # Clean up dummy file
-    (mock_cm.get_config_dir_path() / "autotidy_history.jsonl").unlink(missing_ok=True)
+
+    # Clean up dummy files
+    config_dir = mock_cm.get_config_dir_path()
+    (config_dir / "autotidy_history.jsonl").unlink(missing_ok=True)
+    (config_dir / "file1_moved.txt").unlink(missing_ok=True)
+    (config_dir / "file1_original.txt").unlink(missing_ok=True) # If undo was tested
+
     sys.exit(exit_code)
