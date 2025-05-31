@@ -1,5 +1,5 @@
 # PyInstaller files
-*.spec
+# *.spec
 build/
 dist/
 Output/
