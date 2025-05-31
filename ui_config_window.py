@@ -8,7 +8,8 @@ from PyQt6.QtCore import QTimer, Qt, pyqtSlot
 
 from config_manager import ConfigManager
 from worker import MonitoringWorker
-from ui_settings_dialog import SettingsDialog # Import the new dialog
+from ui_settings_dialog import SettingsDialog
+from ui_history_viewer_dialog import HistoryViewerDialog # Import History Viewer
 
 LOG_QUEUE_CHECK_INTERVAL_MS = 250
 
@@ -40,11 +41,12 @@ class ConfigWindow(QWidget):
         top_controls_layout.addWidget(self.add_folder_button)
         top_controls_layout.addWidget(self.remove_folder_button)
         top_controls_layout.addStretch()
-        # --- Add Settings Button ---
+
+        self.viewHistoryButton = QPushButton("View History") # Add View History button
+        top_controls_layout.addWidget(self.viewHistoryButton)
+
         self.settings_button = QPushButton("Settings")
-        # Optionally add an icon: self.settings_button.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogDetailedView))
         top_controls_layout.addWidget(self.settings_button)
-        # -------------------------
         main_layout.addLayout(top_controls_layout)
 
         # --- Folder List ---
@@ -117,6 +119,7 @@ class ConfigWindow(QWidget):
         self.start_button.clicked.connect(self.start_monitoring)
         self.stop_button.clicked.connect(self.stop_monitoring)
         self.settings_button.clicked.connect(self.open_settings_dialog)
+        self.viewHistoryButton.clicked.connect(self.open_history_viewer) # Connect View History button
 
         self._update_ui_for_status_and_mode() # Initial UI update
 
@@ -300,6 +303,12 @@ class ConfigWindow(QWidget):
         dialog = SettingsDialog(self.config_manager, self) # Pass config manager and parent
         dialog.exec() # Show the dialog modally
         self._update_ui_for_status_and_mode() # Refresh UI after settings change
+
+    @pyqtSlot()
+    def open_history_viewer(self):
+        """Opens the history viewer dialog."""
+        dialog = HistoryViewerDialog(self.config_manager, self)
+        dialog.exec()
 
     def _update_ui_for_status_and_mode(self):
         """Updates button texts and status label based on worker status and dry run mode."""
