@@ -29,13 +29,14 @@ class HistoryManager:
             print(f"Error: Could not create history log directory {self.history_file_path.parent}: {e}", file=sys.stderr)
 
 
-    def log_action(self, data: dict):
+    def log_action(self, data: dict, batch_id: str = None):
         """
         Logs an action to the history file.
 
         Args:
             data: A dictionary containing the action details.
                   The timestamp will be added/overwritten by this method.
+            batch_id: Optional. A string identifying a batch of operations.
         """
         if not self.history_file_path.parent.exists():
             # If directory creation failed earlier, don't attempt to log.
@@ -43,6 +44,8 @@ class HistoryManager:
             return
 
         data["timestamp"] = datetime.now(timezone.utc).isoformat()
+        if batch_id:
+            data["batch_id"] = batch_id
 
         try:
             with open(self.history_file_path, 'a', encoding='utf-8') as f:

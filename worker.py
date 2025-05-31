@@ -1,6 +1,7 @@
 import threading
 import time
 import queue
+import uuid
 import os
 import sys
 from pathlib import Path
@@ -30,6 +31,8 @@ class MonitoringWorker(threading.Thread):
         self.log_queue.put("STATUS: Running")
 
         while not self._stop_event.is_set():
+            current_batch_id = uuid.uuid4().hex # Generate batch_id for this scan cycle
+
             # Get the list of folders specifically
             folders_to_monitor = self.config_manager.get_monitored_folders()
 
@@ -87,7 +90,8 @@ class MonitoringWorker(threading.Thread):
                                         pattern, # rule_pattern
                                         age_days, # rule_age_days
                                         use_regex, # rule_use_regex
-                                        self.history_manager.log_action # history_logger_callable
+                                        # Pass a lambda that includes the current_batch_id
+                                        lambda log_data: self.history_manager.log_action(log_data, batch_id=current_batch_id)
                                     )
                                     self.log_queue.put(f"{'INFO' if success else 'ERROR'}: {message}")
                                     if success:
