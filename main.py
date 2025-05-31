@@ -33,7 +33,10 @@ class AutoTidyApp(QApplication):
         self.config_manager = ConfigManager(APP_NAME) # Pass APP_NAME here
         self.log_queue = queue.Queue()
 
-        # Create Tray Icon first so it can be passed
+        # Create UI (initially hidden)
+        self.config_window = ConfigWindow(self.config_manager, self.log_queue)
+
+        # Create Tray Icon
         self.tray_icon = QSystemTrayIcon(self)
         # Set icon using QIcon(ICON_PATH)
         if os.path.exists(ICON_PATH):
@@ -43,21 +46,7 @@ class AutoTidyApp(QApplication):
             # Optionally set a default Qt icon if desired
             # self.tray_icon.setIcon(QApplication.style().standardIcon(QStyle.StandardPixmap.SP_ComputerIcon))
         self.tray_icon.setToolTip(f"{APP_NAME} is running")
-        # tray_icon.show() will be called after menu setup
-
-        # Create UI (initially hidden), pass the tray_icon
-        self.config_window = ConfigWindow(self.config_manager, self.log_queue, self.tray_icon)
-
-        # self.tray_icon = QSystemTrayIcon(self) # Moved up
-        # Set icon using QIcon(ICON_PATH)
-        if os.path.exists(ICON_PATH):
-            # self.tray_icon.setIcon(QIcon(ICON_PATH)) # Handled above
-        # else:
-            # print(f"Warning: Icon file not found at {ICON_PATH}", file=sys.stderr) # Handled above
-            # Optionally set a default Qt icon if desired
-            # self.tray_icon.setIcon(QApplication.style().standardIcon(QStyle.StandardPixmap.SP_ComputerIcon))
-        # self.tray_icon.setToolTip(f"{APP_NAME} is running") # Handled above
-        self.tray_icon.show() # Show after menu is set, so it's complete
+        self.tray_icon.show()
 
         # Create Tray Menu
         self.tray_menu = QMenu()
