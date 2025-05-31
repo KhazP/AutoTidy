@@ -50,12 +50,13 @@ class AutoTidyApp(QApplication):
 
         # self.tray_icon = QSystemTrayIcon(self) # Moved up
         # Set icon using QIcon(ICON_PATH)
-        if os.path.exists(ICON_PATH):
-            # self.tray_icon.setIcon(QIcon(ICON_PATH)) # Handled above
+        # The following block was redundant and incomplete, so it is removed:
+        # if os.path.exists(ICON_PATH):
+        #     # self.tray_icon.setIcon(QIcon(ICON_PATH)) # Handled above
         # else:
-            # print(f"Warning: Icon file not found at {ICON_PATH}", file=sys.stderr) # Handled above
-            # Optionally set a default Qt icon if desired
-            # self.tray_icon.setIcon(QApplication.style().standardIcon(QStyle.StandardPixmap.SP_ComputerIcon))
+        #     # print(f"Warning: Icon file not found at {ICON_PATH}", file=sys.stderr) # Handled above
+        #     # Optionally set a default Qt icon if desired
+        #     # self.tray_icon.setIcon(QApplication.style().standardIcon(QStyle.StandardPixmap.SP_ComputerIcon))
         # self.tray_icon.setToolTip(f"{APP_NAME} is running") # Handled above
         self.tray_icon.show() # Show after menu is set, so it's complete
 
