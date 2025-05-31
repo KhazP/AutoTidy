@@ -15,6 +15,8 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
+      - name: Install older pip version
+        run: pip install pip==23.3.2
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
