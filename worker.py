@@ -28,14 +28,14 @@ class MonitoringWorker(threading.Thread):
         self.log_queue.put("STATUS: Running")
 
         while not self._stop_event.is_set():
+            # Get the list of folders specifically
             folders_to_monitor = self.config_manager.get_monitored_folders()
-            # Fetch archive format string once per scan cycle, as it's a global setting
-            archive_format = self.config_manager.get_setting("archive_structure_format", "%Y-%m-%d")
 
             if not folders_to_monitor:
                 self.log_queue.put("INFO: No folders configured for monitoring.")
             else:
                 self.log_queue.put(f"INFO: Starting scan of {len(folders_to_monitor)} configured folder(s)...")
+                # Iterate over the list of folder configurations
                 for folder_config in folders_to_monitor:
                     if self._stop_event.is_set():
                         break # Exit loop if stopped during scan
@@ -43,8 +43,6 @@ class MonitoringWorker(threading.Thread):
                     path_str = folder_config.get('path')
                     age_days = folder_config.get('age_days', 0)
                     pattern = folder_config.get('pattern', '*.*')
-                    rule_logic = folder_config.get('rule_logic', 'OR')
-                    pattern_type = folder_config.get('pattern_type', 'glob') # Fetch pattern_type, default to glob
 
                     if not path_str:
                         self.log_queue.put("WARNING: Skipping entry with missing path.")
@@ -55,7 +53,7 @@ class MonitoringWorker(threading.Thread):
                         self.log_queue.put(f"ERROR: Monitored path is not a directory or does not exist: {path_str}")
                         continue
 
-                    self.log_queue.put(f"INFO: Scanning {monitored_path} (Age > {age_days} days {rule_logic.upper()} Pattern ({pattern_type}): '{pattern}')")
+                    self.log_queue.put(f"INFO: Scanning {monitored_path} (Age > {age_days} days, Pattern: '{pattern}')")
                     files_moved_count = 0
                     try:
                         # Iterate through items in the directory (non-recursive for MVP)
@@ -64,8 +62,8 @@ class MonitoringWorker(threading.Thread):
                                 break # Exit inner loop if stopped
 
                              if item.is_file():
-                                if check_file(item, age_days, pattern, rule_logic, pattern_type):
-                                    success, message = move_file(item, monitored_path, archive_format) # Pass archive_format
+                                if check_file(item, age_days, pattern):
+                                    success, message = move_file(item, monitored_path)
                                     self.log_queue.put(f"{'INFO' if success else 'ERROR'}: {message}")
                                     if success:
                                         files_moved_count += 1

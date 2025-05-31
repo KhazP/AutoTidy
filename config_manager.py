@@ -17,14 +17,7 @@ class ConfigManager:
         self.app_name = app_name
         self.config_dir = self._get_config_dir()
         self.config_file = self.config_dir / "config.json"
-        self.default_config = {
-            'folders': [],
-            'settings': {
-                'start_on_login': False,
-                'check_interval_seconds': 3600,
-                'archive_structure_format': "%Y-%m-%d"  # New default setting
-            }
-        }
+        self.default_config = {'folders': [], 'settings': {'start_on_login': False, 'check_interval_seconds': 3600}}
         self.config = self._load_config()
 
     def _get_config_dir(self) -> Path:
@@ -63,8 +56,6 @@ class ConfigManager:
                     for folder_item in loaded_folders:
                         if 'rule_logic' not in folder_item:
                             folder_item['rule_logic'] = 'OR'
-                        if 'pattern_type' not in folder_item: # Add pattern_type default
-                            folder_item['pattern_type'] = 'glob'
 
                     return config_data
                 # Handle migration from old list format
@@ -76,7 +67,6 @@ class ConfigManager:
                      for item in config_data:
                          if isinstance(item, dict) and 'path' in item and 'age_days' in item and 'pattern' in item:
                              item.setdefault('rule_logic', 'OR') # Ensure rule_logic default during migration
-                             item.setdefault('pattern_type', 'glob') # Ensure pattern_type default during migration
                              valid_folders.append(item)
                          else:
                              print(f"Warning: Skipping invalid folder item during migration: {item}", file=sys.stderr)
@@ -115,17 +105,11 @@ class ConfigManager:
         """Returns just the list of monitored folder configurations."""
         return self.config.get('folders', [])
 
-    def add_folder(self, path: str, age_days: int = 7, pattern: str = "*.*", pattern_type: str = "glob") -> bool:
+    def add_folder(self, path: str, age_days: int = 7, pattern: str = "*.*") -> bool:
         """Adds a new folder configuration."""
         folders = self.config.setdefault('folders', []) # Ensure 'folders' key exists
         if not any(item['path'] == path for item in folders):
-            folders.append({
-                'path': path,
-                'age_days': age_days,
-                'pattern': pattern,
-                'rule_logic': 'OR',
-                'pattern_type': pattern_type
-            })
+            folders.append({'path': path, 'age_days': age_days, 'pattern': pattern, 'rule_logic': 'OR'})
             self.save_config()
             return True
         return False # Path already exists
@@ -140,7 +124,7 @@ class ConfigManager:
             return True
         return False # Path not found
 
-    def update_folder_rule(self, path: str, age_days: int, pattern: str, rule_logic: str, pattern_type: str) -> bool:
+    def update_folder_rule(self, path: str, age_days: int, pattern: str, rule_logic: str) -> bool:
         """Updates the rules for a specific folder path."""
         folders = self.config.setdefault('folders', [])
         for item in folders:
@@ -148,7 +132,6 @@ class ConfigManager:
                 item['age_days'] = age_days
                 item['pattern'] = pattern
                 item['rule_logic'] = rule_logic
-                item['pattern_type'] = pattern_type
                 self.save_config()
                 return True
         return False # Path not found
