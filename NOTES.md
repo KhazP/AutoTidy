@@ -1,3 +1,9 @@
+**Important Note:** This document (`NOTES.md`) was an initial planning guide for the Minimum Viable Product (MVP) of AutoTidy. It does **not** reflect the current full feature set of the application. Many features listed herein as "Out of Scope for MVP" or not detailed have since been implemented.
+
+**For accurate and up-to-date information on AutoTidy's current features, please refer to the [README.md](README.md) file.**
+
+---
+
 # NOTES.md - AutoTidy MVP Development Guide for AI Agent
 
 This document provides a summary and high-level implementation plan for the AutoTidy MVP, based on the project's PRD and Tech Design Doc. It is intended to guide the AI IDE agent during initial code generation.
