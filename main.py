@@ -13,15 +13,14 @@ from constants import APP_NAME # Import from constants
 # Worker is implicitly used by ConfigWindow's start/stop actions
 
 # Determine the base path (directory of the script)
-if getattr(sys, 'frozen', False):
-    # If run as a bundled executable (PyInstaller)
-    base_path = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
-else:
-    # If run as a normal script
-    base_path = os.path.dirname(os.path.abspath(__file__))
+def resource_path(relative_path):
+    """ Get absolute path to resource, works for dev and for PyInstaller """
+    if hasattr(sys, '_MEIPASS'):
+        return os.path.join(sys._MEIPASS, relative_path)
+    return os.path.join(os.path.abspath("."), relative_path)
 
 ICON_NAME = "autotidyicon.ico"
-ICON_PATH = os.path.join(base_path, ICON_NAME) # Construct path relative to base
+ICON_PATH = resource_path(ICON_NAME)  # Use resource_path for PyInstaller compatibility
 
 class AutoTidyApp(QApplication):
     """Main application class managing the system tray icon and windows."""
