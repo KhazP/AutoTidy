@@ -11,6 +11,7 @@ from config_manager import ConfigManager
 from ui_config_window import ConfigWindow
 from constants import APP_NAME # Import from constants
 # Worker is implicitly used by ConfigWindow's start/stop actions
+# No direct need for UndoManager/UndoDialog imports here if ConfigWindow handles it
 
 # Determine the base path (directory of the script)
 def resource_path(relative_path):
@@ -52,12 +53,14 @@ class AutoTidyApp(QApplication):
         show_action = QAction("Show/Hide Config", self)
         start_action = QAction("Start Monitoring", self)
         stop_action = QAction("Stop Monitoring", self)
+        history_action = QAction("View Action History / Undo", self) # New action
         quit_action = QAction("Quit", self)
 
         self.tray_menu.addAction(show_action)
         self.tray_menu.addSeparator()
         self.tray_menu.addAction(start_action)
         self.tray_menu.addAction(stop_action)
+        self.tray_menu.addAction(history_action) # Add to menu
         self.tray_menu.addSeparator()
         self.tray_menu.addAction(quit_action)
 
@@ -67,6 +70,7 @@ class AutoTidyApp(QApplication):
         show_action.triggered.connect(self.toggle_window)
         start_action.triggered.connect(self.config_window.start_monitoring) # Delegate to window's slot
         stop_action.triggered.connect(self.config_window.stop_monitoring)   # Delegate to window's slot
+        history_action.triggered.connect(self.config_window.open_undo_dialog) # Connect to ConfigWindow's slot
         quit_action.triggered.connect(self.quit_app)
         self.tray_icon.activated.connect(self.on_tray_activated)
 

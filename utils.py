@@ -61,7 +61,8 @@ def process_file_action(
     rule_pattern: str, # New parameter for history logging
     rule_age_days: int,  # New parameter for history logging
     rule_use_regex: bool, # New parameter for history logging
-    history_logger_callable # New parameter for history logging
+    history_logger_callable, # New parameter for history logging
+    run_id: str # New parameter for batch operation run_id
 ) -> tuple[bool, str]:
     """
     Processes a file by moving, copying, or deleting it based on the provided template and action,
@@ -132,7 +133,7 @@ def process_file_action(
                             "original_path": str(file_path), "action_taken": action.upper() + "_ERROR_COLLISION",
                             "destination_path": str(target_base_dir / filename_full), "monitored_folder": str(monitored_folder_path),
                             "rule_pattern": rule_pattern, "rule_age_days": rule_age_days, "rule_use_regex": rule_use_regex,
-                            "rule_action_config": action, "status": "FAILURE", "details": message
+                            "rule_action_config": action, "status": "FAILURE", "details": message, "run_id": run_id
                         }
                         history_logger_callable(log_data_collision)
                         return False, message
@@ -151,7 +152,7 @@ def process_file_action(
                     "original_path": str(file_path), "action_taken": action_taken_str,
                     "destination_path": str(target_file_path), "monitored_folder": str(monitored_folder_path),
                     "rule_pattern": rule_pattern, "rule_age_days": rule_age_days, "rule_use_regex": rule_use_regex,
-                    "rule_action_config": action, "status": "SUCCESS", "details": message
+                    "rule_action_config": action, "status": "SUCCESS", "details": message, "run_id": run_id
                 }
                 history_logger_callable(log_data)
                 return True, message
@@ -172,7 +173,7 @@ def process_file_action(
                 "original_path": str(file_path), "action_taken": actual_log_action_verb_str,
                 "destination_path": str(target_file_path), "monitored_folder": str(monitored_folder_path),
                 "rule_pattern": rule_pattern, "rule_age_days": rule_age_days, "rule_use_regex": rule_use_regex,
-                "rule_action_config": action, "status": "SUCCESS", "details": message
+                "rule_action_config": action, "status": "SUCCESS", "details": message, "run_id": run_id
             }
             history_logger_callable(log_data)
             return True, message
@@ -187,7 +188,7 @@ def process_file_action(
             log_data = {"original_path": str(file_path), "action_taken": action_taken_str, "destination_path": None,
                         "monitored_folder": str(monitored_folder_path), "rule_pattern": rule_pattern,
                         "rule_age_days": rule_age_days, "rule_use_regex": rule_use_regex,
-                        "rule_action_config": action, "status": "SUCCESS", "details": details_message}
+                        "rule_action_config": action, "status": "SUCCESS", "details": details_message, "run_id": run_id}
             history_logger_callable(log_data)
             return True, details_message
 
@@ -201,7 +202,7 @@ def process_file_action(
             log_data = {"original_path": str(file_path), "action_taken": action_taken_str, "destination_path": None,
                         "monitored_folder": str(monitored_folder_path), "rule_pattern": rule_pattern,
                         "rule_age_days": rule_age_days, "rule_use_regex": rule_use_regex,
-                        "rule_action_config": action, "status": "SUCCESS", "details": details_message}
+                        "rule_action_config": action, "status": "SUCCESS", "details": details_message, "run_id": run_id}
             history_logger_callable(log_data)
             return True, details_message
 
@@ -210,7 +211,7 @@ def process_file_action(
             log_data = {"original_path": str(file_path), "action_taken": "UNKNOWN_ACTION", "destination_path": None,
                         "monitored_folder": str(monitored_folder_path), "rule_pattern": rule_pattern,
                         "rule_age_days": rule_age_days, "rule_use_regex": rule_use_regex,
-                        "rule_action_config": action, "status": "FAILURE", "details": message}
+                        "rule_action_config": action, "status": "FAILURE", "details": message, "run_id": run_id}
             history_logger_callable(log_data)
             return False, message
 
@@ -220,7 +221,7 @@ def process_file_action(
         log_data = {"original_path": str(file_path), "action_taken": action_taken_log, "destination_path": None,
                     "monitored_folder": str(monitored_folder_path), "rule_pattern": rule_pattern,
                     "rule_age_days": rule_age_days, "rule_use_regex": rule_use_regex,
-                    "rule_action_config": action, "status": "FAILURE", "details": message}
+                    "rule_action_config": action, "status": "FAILURE", "details": message, "run_id": run_id}
         history_logger_callable(log_data)
         return False, message
     except PermissionError:
@@ -229,7 +230,7 @@ def process_file_action(
         log_data = {"original_path": str(file_path), "action_taken": action_taken_log, "destination_path": None,
                     "monitored_folder": str(monitored_folder_path), "rule_pattern": rule_pattern,
                     "rule_age_days": rule_age_days, "rule_use_regex": rule_use_regex,
-                    "rule_action_config": action, "status": "FAILURE", "details": message}
+                    "rule_action_config": action, "status": "FAILURE", "details": message, "run_id": run_id}
         history_logger_callable(log_data)
         return False, message
     except Exception as e:
@@ -238,6 +239,6 @@ def process_file_action(
         log_data = {"original_path": str(file_path), "action_taken": action_taken_log, "destination_path": None,
                     "monitored_folder": str(monitored_folder_path), "rule_pattern": rule_pattern,
                     "rule_age_days": rule_age_days, "rule_use_regex": rule_use_regex,
-                    "rule_action_config": action, "status": "FAILURE", "details": message}
+                    "rule_action_config": action, "status": "FAILURE", "details": message, "run_id": run_id}
         history_logger_callable(log_data)
         return False, message

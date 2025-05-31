@@ -4,6 +4,7 @@ import queue
 import os
 import sys
 from pathlib import Path
+import uuid
 
 from config_manager import ConfigManager
 from utils import check_file, process_file_action
@@ -28,6 +29,8 @@ class MonitoringWorker(threading.Thread):
         self.running = True
         self.log_queue.put("INFO: Monitoring worker started.")
         self.log_queue.put("STATUS: Running")
+
+        current_run_id = str(uuid.uuid4()) # Generate run_id for this cycle
 
         while not self._stop_event.is_set():
             # Get the list of folders specifically
@@ -87,7 +90,8 @@ class MonitoringWorker(threading.Thread):
                                         pattern, # rule_pattern
                                         age_days, # rule_age_days
                                         use_regex, # rule_use_regex
-                                        self.history_manager.log_action # history_logger_callable
+                                        self.history_manager.log_action, # history_logger_callable
+                                        current_run_id # run_id
                                     )
                                     self.log_queue.put(f"{'INFO' if success else 'ERROR'}: {message}")
                                     if success:
