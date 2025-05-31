@@ -2,13 +2,14 @@ import sys
 import queue
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QListWidget, QLineEdit,
-    QSpinBox, QLabel, QTextEdit, QFileDialog, QMessageBox, QListWidgetItem, QComboBox
+    QSpinBox, QLabel, QTextEdit, QFileDialog, QMessageBox, QListWidgetItem, QComboBox, QCheckBox
 )
 from PyQt6.QtCore import QTimer, Qt, pyqtSlot
 
 from config_manager import ConfigManager
 from worker import MonitoringWorker
-from ui_settings_dialog import SettingsDialog # Import the new dialog
+from ui_settings_dialog import SettingsDialog
+from ui_history_viewer_dialog import HistoryViewerDialog # Import History Viewer
 
 LOG_QUEUE_CHECK_INTERVAL_MS = 250
 
@@ -40,11 +41,12 @@ class ConfigWindow(QWidget):
         top_controls_layout.addWidget(self.add_folder_button)
         top_controls_layout.addWidget(self.remove_folder_button)
         top_controls_layout.addStretch()
-        # --- Add Settings Button ---
+
+        self.viewHistoryButton = QPushButton("View History") # Add View History button
+        top_controls_layout.addWidget(self.viewHistoryButton)
+
         self.settings_button = QPushButton("Settings")
-        # Optionally add an icon: self.settings_button.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogDetailedView))
         top_controls_layout.addWidget(self.settings_button)
-        # -------------------------
         main_layout.addLayout(top_controls_layout)
 
         # --- Folder List ---
@@ -67,11 +69,23 @@ class ConfigWindow(QWidget):
         self.pattern_lineedit.setEnabled(False)
         rule_layout.addWidget(self.pattern_lineedit)
 
+        # Add Use Regex Checkbox
+        self.useRegexCheckbox = QCheckBox("Use Regular Expression")
+        self.useRegexCheckbox.setEnabled(False)
+        rule_layout.addWidget(self.useRegexCheckbox)
+
         rule_layout.addWidget(QLabel("Logic:"))
         self.rule_logic_combo = QComboBox()
         self.rule_logic_combo.addItems(["OR", "AND"])
         self.rule_logic_combo.setEnabled(False)
         rule_layout.addWidget(self.rule_logic_combo)
+
+        # Action ComboBox (Move/Copy/Delete)
+        rule_layout.addWidget(QLabel("Action:"))
+        self.actionComboBox = QComboBox()
+        self.actionComboBox.addItems(["Move", "Copy", "Delete to Trash", "Delete Permanently"])
+        self.actionComboBox.setEnabled(False)
+        rule_layout.addWidget(self.actionComboBox)
 
         main_layout.addLayout(rule_layout)
 
@@ -81,7 +95,7 @@ class ConfigWindow(QWidget):
         self.status_label = QLabel("Stopped")
         status_layout.addWidget(self.status_label)
         status_layout.addStretch()
-        self.start_button = QPushButton("Start Monitoring")
+        self.start_button = QPushButton("Start Monitoring") # Text will be updated by _update_ui_for_status_and_mode
         self.stop_button = QPushButton("Stop Monitoring")
         self.stop_button.setEnabled(False)
         status_layout.addWidget(self.start_button)
@@ -99,10 +113,15 @@ class ConfigWindow(QWidget):
         self.folder_list_widget.currentItemChanged.connect(self.update_rule_inputs)
         self.age_spinbox.valueChanged.connect(self.save_rule_changes)
         self.pattern_lineedit.editingFinished.connect(self.save_rule_changes) # Save when focus lost or Enter pressed
+        self.useRegexCheckbox.stateChanged.connect(self.save_rule_changes) # Connect checkbox
         self.rule_logic_combo.currentIndexChanged.connect(self.save_rule_changes) # Connect new combo box
+        self.actionComboBox.currentIndexChanged.connect(self.save_rule_changes) # Connect action combo box
         self.start_button.clicked.connect(self.start_monitoring)
         self.stop_button.clicked.connect(self.stop_monitoring)
-        self.settings_button.clicked.connect(self.open_settings_dialog) # Connect settings button
+        self.settings_button.clicked.connect(self.open_settings_dialog)
+        self.viewHistoryButton.clicked.connect(self.open_history_viewer) # Connect View History button
+
+        self._update_ui_for_status_and_mode() # Initial UI update
 
     def _load_initial_config(self):
         """Load existing configuration into the UI."""
@@ -156,9 +175,13 @@ class ConfigWindow(QWidget):
                          self.age_spinbox.setEnabled(False)
                          self.pattern_lineedit.setEnabled(False)
                          self.rule_logic_combo.setEnabled(False) # Disable logic combo
+                         self.useRegexCheckbox.setEnabled(False) # Disable regex checkbox
+                         self.actionComboBox.setEnabled(False) # Disable action combo box
                          self.age_spinbox.setValue(0)
                          self.pattern_lineedit.clear()
+                         self.useRegexCheckbox.setChecked(False) # Uncheck regex checkbox
                          self.rule_logic_combo.setCurrentIndex(0) # Reset logic combo
+                         self.actionComboBox.setCurrentIndex(0) # Reset action combo box
 
                 else:
                      QMessageBox.warning(self, "Error", f"Could not remove folder '{path}' from configuration.")
@@ -176,33 +199,58 @@ class ConfigWindow(QWidget):
                 self.age_spinbox.blockSignals(True)
                 self.pattern_lineedit.blockSignals(True)
                 self.rule_logic_combo.blockSignals(True)
+                self.useRegexCheckbox.blockSignals(True)
+                self.actionComboBox.blockSignals(True) # Block actionComboBox signals
 
                 self.age_spinbox.setValue(rule.get('age_days', 0))
                 self.pattern_lineedit.setText(rule.get('pattern', '*.*'))
                 self.rule_logic_combo.setCurrentText(rule.get('rule_logic', 'OR'))
+                self.useRegexCheckbox.setChecked(rule.get('use_regex', False)) # Load use_regex
+
+                action_value = rule.get('action', 'move')
+                action_display_map = {
+                    "move": "Move",
+                    "copy": "Copy",
+                    "delete_to_trash": "Delete to Trash",
+                    "delete_permanently": "Delete Permanently"
+                }
+                self.actionComboBox.setCurrentText(action_display_map.get(action_value, "Move"))
+
                 self.age_spinbox.setEnabled(True)
                 self.pattern_lineedit.setEnabled(True)
                 self.rule_logic_combo.setEnabled(True)
+                self.useRegexCheckbox.setEnabled(True) # Enable checkbox
+                self.actionComboBox.setEnabled(True) # Enable actionComboBox
 
                 self.age_spinbox.blockSignals(False)
                 self.pattern_lineedit.blockSignals(False)
                 self.rule_logic_combo.blockSignals(False)
+                self.useRegexCheckbox.blockSignals(False)
+                self.actionComboBox.blockSignals(False) # Unblock actionComboBox signals
             else:
                 # Should not happen if list is synced with config, but handle defensively
                 self.age_spinbox.setEnabled(False)
                 self.pattern_lineedit.setEnabled(False)
                 self.rule_logic_combo.setEnabled(False)
+                self.useRegexCheckbox.setEnabled(False) # Disable checkbox
+                self.actionComboBox.setEnabled(False) # Disable actionComboBox
                 self.age_spinbox.setValue(0)
                 self.pattern_lineedit.clear()
                 self.rule_logic_combo.setCurrentIndex(0)
+                self.useRegexCheckbox.setChecked(False) # Uncheck checkbox
+                self.actionComboBox.setCurrentIndex(0) # Reset actionComboBox
         else:
             # No item selected
             self.age_spinbox.setEnabled(False)
             self.pattern_lineedit.setEnabled(False)
             self.rule_logic_combo.setEnabled(False)
+            self.useRegexCheckbox.setEnabled(False) # Disable checkbox
+            self.actionComboBox.setEnabled(False) # Disable actionComboBox
             self.age_spinbox.setValue(0)
             self.pattern_lineedit.clear()
             self.rule_logic_combo.setCurrentIndex(0)
+            self.useRegexCheckbox.setChecked(False) # Uncheck checkbox
+            self.actionComboBox.setCurrentIndex(0) # Reset actionComboBox
 
     @pyqtSlot()
     def save_rule_changes(self):
@@ -212,9 +260,39 @@ class ConfigWindow(QWidget):
             path = current_item.text()
             age = self.age_spinbox.value()
             pattern = self.pattern_lineedit.text()
-            rule_logic = self.rule_logic_combo.currentText() # Get logic from combo box
-            if self.config_manager.update_folder_rule(path, age, pattern, rule_logic):
-                 self.log_queue.put(f"INFO: Updated rules for {path} (Logic: {rule_logic})")
+            rule_logic = self.rule_logic_combo.currentText()
+            use_regex = self.useRegexCheckbox.isChecked()
+
+            action_text = self.actionComboBox.currentText()
+            action_map = {
+                "Move": "move",
+                "Copy": "copy",
+                "Delete to Trash": "delete_to_trash",
+                "Delete Permanently": "delete_permanently"
+            }
+            action_value = action_map.get(action_text, "move")
+
+            # Show warning for permanent delete
+            if action_value == "delete_permanently":
+                # Check if this is a new selection or already saved.
+                # This check prevents the warning from showing every time save_rule_changes is called
+                # if the user has already confirmed it (e.g. by changing another field).
+                # A more robust way would be to only show this if currentText() just changed to "Delete Permanently".
+                # For now, we check against the config to see if it was already "delete_permanently".
+                # This means the warning appears when user selects it, and if they then change another rule aspect
+                # while "Delete Permanently" is still selected, it might show again.
+                # A better UX would be to connect this warning to the currentIndexChanged signal specifically for this option.
+                # However, sticking to the prompt's placement in save_rule_changes:
+                current_rule = self.config_manager.get_folder_rule(path)
+                if not current_rule or current_rule.get('action') != "delete_permanently":
+                    QMessageBox.warning(self, "Permanent Delete Warning",
+                                        "Warning: 'Delete Permanently' will erase files irreversibly. "
+                                        "These files cannot be recovered from the Recycle Bin. "
+                                        "Ensure this rule is configured carefully.",
+                                        QMessageBox.StandardButton.Ok)
+
+            if self.config_manager.update_folder_rule(path, age, pattern, rule_logic, use_regex, action_value): # Pass action_value
+                 self.log_queue.put(f"INFO: Updated rules for {path} (Logic: {rule_logic}, Regex: {use_regex}, Action: {action_value})")
             else:
                  # Should not happen if item exists
                  self.log_queue.put(f"ERROR: Failed to update rules for {path} (not found in config?)")
@@ -224,28 +302,63 @@ class ConfigWindow(QWidget):
         """Open the settings dialog window."""
         dialog = SettingsDialog(self.config_manager, self) # Pass config manager and parent
         dialog.exec() # Show the dialog modally
+        self._update_ui_for_status_and_mode() # Refresh UI after settings change
+
+    @pyqtSlot()
+    def open_history_viewer(self):
+        """Opens the history viewer dialog."""
+        dialog = HistoryViewerDialog(self.config_manager, self)
+        dialog.exec()
+
+    def _update_ui_for_status_and_mode(self):
+        """Updates button texts and status label based on worker status and dry run mode."""
+        dry_run_active = self.config_manager.get_dry_run_mode()
+        is_running = self.worker_status == "Running"
+
+        if dry_run_active:
+            self.start_button.setText("Start Dry Run")
+            if is_running:
+                self.status_label.setText("Dry Run Active")
+                self.start_button.setEnabled(False)
+                self.stop_button.setEnabled(True)
+            else: # Stopped or Error
+                # Preserve error message if worker_status indicates an error
+                self.status_label.setText(self.worker_status if "Error" in self.worker_status else "Idle (Dry Run Mode)")
+                self.start_button.setEnabled(True)
+                self.stop_button.setEnabled(False)
+        else:
+            self.start_button.setText("Start Monitoring")
+            if is_running:
+                self.status_label.setText("Running") # Or self.worker_status if it can be "Running (Dry Run)"
+                self.start_button.setEnabled(False)
+                self.stop_button.setEnabled(True)
+            else: # Stopped or Error
+                self.status_label.setText(self.worker_status)
+                self.start_button.setEnabled(True)
+                self.stop_button.setEnabled(False)
+
 
     @pyqtSlot()
     def start_monitoring(self):
         """Start the background monitoring worker thread."""
         if self.monitoring_worker and self.monitoring_worker.is_alive():
-            self.log_queue.put("INFO: Monitoring is already running.")
+            dry_run_active = self.config_manager.get_dry_run_mode()
+            self.log_queue.put(f"INFO: {'Dry run' if dry_run_active else 'Monitoring'} is already running.")
             return
 
-        self.log_queue.put("INFO: Starting monitoring...")
-        # Fetch the check interval from settings
-        check_interval_s = self.config_manager.get_setting("check_interval_seconds", 3600) # Default 1hr
-        # Pass the current config manager, queue, and check interval
+        dry_run_active = self.config_manager.get_dry_run_mode()
+        self.log_queue.put(f"INFO: Starting {'dry run' if dry_run_active else 'monitoring'}...")
+
         self.monitoring_worker = MonitoringWorker(
             self.config_manager,
-            self.log_queue,
-            check_interval=check_interval_s
+            self.log_queue
         )
         self.monitoring_worker.start()
-
-        self.start_button.setEnabled(False)
-        self.stop_button.setEnabled(True)
-        # Status label will be updated via queue message from worker
+        # self.worker_status will be updated by message from worker, then _update_ui_for_status_and_mode
+        # For immediate feedback, we can anticipate:
+        # self.worker_status = "Running" # Anticipate
+        # self._update_ui_for_status_and_mode()
+        # However, it's better to let the worker signal its actual start.
 
     @pyqtSlot()
     def stop_monitoring(self):
@@ -253,17 +366,14 @@ class ConfigWindow(QWidget):
         if self.monitoring_worker and self.monitoring_worker.is_alive():
             self.log_queue.put("INFO: Stopping monitoring...")
             self.monitoring_worker.stop()
-            # Wait briefly for the thread to potentially finish its current cycle and log stop message
-            # A more robust solution might involve joining with a timeout or signals
-            # self.monitoring_worker.join(timeout=1.0)
-            self.start_button.setEnabled(True)
-            self.stop_button.setEnabled(False)
-            # Status label will be updated via queue message from worker
+            # self.monitoring_worker.join(timeout=1.0) # Avoid long UI block
+            # self.worker_status = "Stopped" # Anticipate
+            # self._update_ui_for_status_and_mode()
+            # Worker will send "STATUS: Stopped"
         else:
             self.log_queue.put("INFO: Monitoring is not currently running.")
-            self.start_button.setEnabled(True)
-            self.stop_button.setEnabled(False)
-            self.status_label.setText("Stopped") # Ensure UI consistency
+            # self.worker_status = "Stopped" # Ensure consistency
+            # self._update_ui_for_status_and_mode()
 
 
     @pyqtSlot()
@@ -274,17 +384,18 @@ class ConfigWindow(QWidget):
                 message = self.log_queue.get_nowait()
                 if message.startswith("STATUS:"):
                     self.worker_status = message.split(":", 1)[1].strip()
-                    self.status_label.setText(self.worker_status)
-                    # Update button states based on reported status
-                    if self.worker_status == "Running":
-                        self.start_button.setEnabled(False)
-                        self.stop_button.setEnabled(True)
-                    else: # Stopped or Error
-                        self.start_button.setEnabled(True)
-                        self.stop_button.setEnabled(False)
-                        # If worker stopped unexpectedly, reflect this
-                        if self.monitoring_worker and not self.monitoring_worker.is_alive() and self.worker_status != "Stopped":
-                             self.status_label.setText("Stopped (Unexpectedly)")
+                    # self.status_label.setText(self.worker_status) # Delegated
+                    self._update_ui_for_status_and_mode() # Update all UI based on new status
+                    # # Update button states based on reported status # Delegated
+                    # if self.worker_status == "Running":
+                    #     self.start_button.setEnabled(False)
+                    #     self.stop_button.setEnabled(True)
+                    # else: # Stopped or Error
+                    #     self.start_button.setEnabled(True)
+                    #     self.stop_button.setEnabled(False)
+                    #     # If worker stopped unexpectedly, reflect this
+                    #     if self.monitoring_worker and not self.monitoring_worker.is_alive() and self.worker_status != "Stopped":
+                    #          self.status_label.setText("Stopped (Unexpectedly)") # This part can be refined in _update_ui
 
 
                 elif message.startswith("ERROR:"):

@@ -17,8 +17,22 @@ class ConfigManager:
         self.app_name = app_name
         self.config_dir = self._get_config_dir()
         self.config_file = self.config_dir / "config.json"
-        self.default_config = {'folders': [], 'settings': {'start_on_login': False, 'check_interval_seconds': 3600}}
+        self.default_config = {
+            'folders': [],
+            'settings': {
+                'start_on_login': False,
+                'check_interval_seconds': 3600, # Old setting, might be replaced by new schedule settings
+                'archive_path_template': '_Cleanup/{YYYY}-{MM}-{DD}',
+                'schedule_type': 'interval',  # Default schedule type
+                'interval_minutes': 60,  # Default interval in minutes
+                'dry_run_mode': False  # Default dry run mode
+            }
+        }
         self.config = self._load_config()
+
+    def get_config_dir_path(self) -> Path: # Method used by HistoryManager
+        """Returns the application's configuration directory path."""
+        return self.config_dir
 
     def _get_config_dir(self) -> Path:
         """Determines the appropriate configuration directory based on OS."""
@@ -56,6 +70,9 @@ class ConfigManager:
                     for folder_item in loaded_folders:
                         if 'rule_logic' not in folder_item:
                             folder_item['rule_logic'] = 'OR'
+                        if 'use_regex' not in folder_item:  # Add default for use_regex
+                            folder_item['use_regex'] = False
+                        folder_item.setdefault('action', 'move') # Add default for action
 
                     return config_data
                 # Handle migration from old list format
@@ -67,6 +84,8 @@ class ConfigManager:
                      for item in config_data:
                          if isinstance(item, dict) and 'path' in item and 'age_days' in item and 'pattern' in item:
                              item.setdefault('rule_logic', 'OR') # Ensure rule_logic default during migration
+                             item.setdefault('use_regex', False) # Ensure use_regex default during migration
+                             item.setdefault('action', 'move')   # Ensure action default during migration
                              valid_folders.append(item)
                          else:
                              print(f"Warning: Skipping invalid folder item during migration: {item}", file=sys.stderr)
@@ -109,7 +128,14 @@ class ConfigManager:
         """Adds a new folder configuration."""
         folders = self.config.setdefault('folders', []) # Ensure 'folders' key exists
         if not any(item['path'] == path for item in folders):
-            folders.append({'path': path, 'age_days': age_days, 'pattern': pattern, 'rule_logic': 'OR'})
+            folders.append({
+                'path': path,
+                'age_days': age_days,
+                'pattern': pattern,
+                'rule_logic': 'OR',
+                'use_regex': False, # Add default use_regex field
+                'action': 'move'   # Add default action field
+            })
             self.save_config()
             return True
         return False # Path already exists
@@ -124,7 +150,7 @@ class ConfigManager:
             return True
         return False # Path not found
 
-    def update_folder_rule(self, path: str, age_days: int, pattern: str, rule_logic: str) -> bool:
+    def update_folder_rule(self, path: str, age_days: int, pattern: str, rule_logic: str, use_regex: bool, action: str) -> bool:
         """Updates the rules for a specific folder path."""
         folders = self.config.setdefault('folders', [])
         for item in folders:
@@ -132,6 +158,8 @@ class ConfigManager:
                 item['age_days'] = age_days
                 item['pattern'] = pattern
                 item['rule_logic'] = rule_logic
+                item['use_regex'] = use_regex
+                item['action'] = action # Save the new action field
                 self.save_config()
                 return True
         return False # Path not found
@@ -156,3 +184,46 @@ class ConfigManager:
         settings[key] = value
         # Note: save_config() is not called here automatically.
         # Call save_config() explicitly after setting changes.
+
+    def get_archive_path_template(self) -> str:
+        """Returns the archive path template string."""
+        # Ensure settings dictionary and the specific key exist, falling back to default.
+        default_template = self.default_config.get('settings', {}).get('archive_path_template', '_Cleanup/{YYYY}-{MM}-{DD}')
+        return self.config.setdefault('settings', {}).get('archive_path_template', default_template)
+
+    def set_archive_path_template(self, template_string: str):
+        """Sets the archive path template string."""
+        if not template_string: # Basic validation
+            # Fallback to default if empty string is provided, or handle error
+            template_string = self.default_config.get('settings', {}).get('archive_path_template', '_Cleanup/{YYYY}-{MM}-{DD}')
+        self.set_setting('archive_path_template', template_string)
+
+    def get_schedule_config(self) -> dict:
+        """Returns the schedule configuration."""
+        settings = self.config.setdefault('settings', {})
+        default_settings = self.default_config.get('settings', {})
+        return {
+            'type': settings.get('schedule_type', default_settings.get('schedule_type', 'interval')),
+            'interval_minutes': settings.get('interval_minutes', default_settings.get('interval_minutes', 60))
+        }
+
+    def set_schedule_config(self, schedule_type: str, interval_minutes: int):
+        """Sets the schedule configuration."""
+        # Basic validation for interval_minutes
+        if not isinstance(interval_minutes, int) or interval_minutes < 1:
+            interval_minutes = self.default_config.get('settings', {}).get('interval_minutes', 60)
+
+        self.set_setting('schedule_type', schedule_type) # For now, always 'interval'
+        self.set_setting('interval_minutes', interval_minutes)
+
+    def get_dry_run_mode(self) -> bool:
+        """Returns the current state of dry run mode."""
+        settings = self.config.setdefault('settings', {})
+        default_settings = self.default_config.get('settings', {})
+        return settings.get('dry_run_mode', default_settings.get('dry_run_mode', False))
+
+    def set_dry_run_mode(self, enabled: bool):
+        """Sets the state of dry run mode."""
+        if not isinstance(enabled, bool): # Basic type validation
+            enabled = False # Default to False if invalid type
+        self.set_setting('dry_run_mode', enabled)

@@ -28,7 +28,7 @@ This document provides a summary and high-level implementation plan for the Auto
     * Configuration Manager class handling loading/saving settings to JSON.
     * Monitoring Worker class running in a separate `threading.Thread`.
     * Rule Engine logic (functions or class) for checking file conditions.
-    * File Mover logic (functions or class) for handling file relocation.
+    * File Action logic (e.g., `process_file_action` function) for handling file relocation (move/copy).
     * Communication between worker thread and main UI thread via `queue.Queue` checked periodically by a `QTimer` in the main thread.
 * **Data Handling Notes**:
     * Configuration (monitored folders, rules) stored locally in a JSON file within standard user config directories (`%APPDATA%/AutoTidy` or `~/.config/AutoTidy`).
@@ -82,13 +82,13 @@ This document provides a summary and high-level implementation plan for the Auto
 * **Key Acceptance Criteria/User Story**: Files in monitored folders older than the specified age OR matching the specified pattern are moved to a subfolder like `_Cleanup/2025-04-15` within that monitored folder.
 * **Technical Implementation Notes**: This is the core logic within the `MonitoringWorker` thread. It involves iterating through files in monitored paths (`os.listdir` or `os.scandir`), checking conditions using the Rule Engine logic (`os.path.getmtime`, `datetime`, `fnmatch`), calculating the target path, creating the dated subdirectory (`os.makedirs(exist_ok=True)`), and moving the file (`shutil.move`). Must handle errors gracefully (`try...except`).
 * **Agent Implementation Steps (Suggested)**:
-    1.  Create the `RuleEngine` logic (e.g., a function `check_file(file_path, age_days, pattern)` returning `True` or `False`). It needs to calculate file age from metadata and check against `age_days`, and check filename against `pattern` using `fnmatch`. Return `True` if *either* condition is met.
-    2.  Create the `FileMover` logic (e.g., a function `move_file(file_path, monitored_folder_path)`). This function calculates the `_Cleanup/YYYY-MM-DD` path based on the current date and `monitored_folder_path`, ensures the directory exists, and performs `shutil.move`. Include `try...except` for `FileNotFoundError`, `PermissionError`. Return success status/message.
+    1.  Create the `RuleEngine` logic (e.g., a function `check_file(file_path, age_days, pattern, use_regex)` returning `True` or `False`). It needs to calculate file age from metadata and check against `age_days`, and check filename against `pattern` using `fnmatch` or `re`. Return `True` if *either* condition is met.
+    2.  Create the File Action logic (e.g., a function `process_file_action(file_path, monitored_folder_path, archive_path_template, action)`). This function uses the `archive_path_template` to determine the target directory and performs `shutil.move` or `shutil.copy2` based on the `action` string. Include `try...except` for `FileNotFoundError`, `PermissionError`. Return success status/message.
     3.  Implement the main loop inside the `MonitoringWorker` thread's `run()` method.
     4.  The loop should iterate through each configured folder/rule set.
     5.  For each folder, iterate through its files/subdirs (potentially recursively, or just top-level for MVP).
-    6.  For each file, call `RuleEngine.check_file`.
-    7.  If `True`, call `FileMover.move_file`.
+    6.  For each file, call the rule checking logic.
+    7.  If a file matches, call `process_file_action` with the appropriate parameters including the action from the rule.
     8.  Send status/error messages back to the main thread via the queue.
 
 ### Feature: Background Operation
