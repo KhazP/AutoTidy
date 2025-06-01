@@ -22,7 +22,7 @@ jobs:
           pip install pyinstaller
       - name: Build executable
         run: |
-          pyinstaller --additional-hooks-dir=.hooks AutoTidy.spec
+          pyinstaller AutoTidy.spec
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
