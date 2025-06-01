@@ -2,6 +2,7 @@ ffmpeg-python
 opencv-python
 PyQt6
 python-magic
+python-magic-bin
 reportlab
 send2trash
 spacy
