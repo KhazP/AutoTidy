@@ -15,38 +15,10 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
-      - name: Install Dependencies
+      - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip==23.3.2
           pip install -r requirements.txt
           pip install pyinstaller
-      - name: Install system dependencies (Linux/macOS/Windows)
-        run: |
-          if [ "$RUNNER_OS" == "Linux" ]; then
-            sudo apt-get update
-            sudo apt-get install -y libmagic-dev
-          elif [ "$RUNNER_OS" == "macOS" ]; then
-            brew install libmagic
-          elif [ "$RUNNER_OS" == "Windows" ]; then
-            # Create the directory if it doesn't exist
-            mkdir -p C:/libmagic
-            # Download libmagic for Windows
-            curl -L -o libmagic.zip https://github.com/nscaife/magic-win64/releases/download/0.4.24.2/magic-0.4.24.2-win64.zip
-            # Extract the zip file (assuming tar can handle zip on Windows runners, or use an alternative like 7z if available)
-            tar -xf libmagic.zip -C C:/libmagic
-            # Add the bin directory (where magic1.dll should be) to the PATH
-            echo "C:/libmagic" >> $GITHUB_PATH 
-            # The python-magic library might also look for magic.mgc. 
-            # The exact location can vary based on how python-magic is compiled or configured.
-            # Common locations for python-magic to find magic.mgc are:
-            # 1. Next to magic1.dll
-            # 2. In a 'share/misc' subdirectory relative to the DLL.
-            # 3. Some predefined system paths.
-            # The nscaife/magic-win64 release seems to put magic.mgc at the root of the zip.
-            # If issues persist, you might need to ensure magic.mgc is discoverable.
-            # One way is to copy it to where python-magic expects it, or set MAGIC_FILE env var.
-            # For now, let's assume placing the DLL directory in PATH is sufficient.
-          fi
       - name: Build executable
         run: |
           pyinstaller AutoTidy.spec
