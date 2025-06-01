@@ -1,2 +1,6 @@
 PyQt6
 send2trash
+python-magic
+tika
+opencv-python-headless
+ffmpeg-python
