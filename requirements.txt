@@ -1,7 +1,7 @@
 ffmpeg-python
 opencv-python
 PyQt6
-python-magic==0.4.27
+python-magic
 reportlab
 send2trash
 spacy

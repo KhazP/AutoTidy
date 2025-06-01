@@ -15,12 +15,13 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
-      - name: Install Dependencies
+      - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
           pip install -r requirements.txt
-      - name: Build Executable
-        run: pyinstaller --onefile main.py
+          pip install pyinstaller
+      - name: Build executable
+        run: |
+          pyinstaller AutoTidy.spec
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
