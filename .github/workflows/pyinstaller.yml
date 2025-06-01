@@ -20,6 +20,15 @@ jobs:
           python -m pip install --upgrade pip==23.3.2
           pip install -r requirements.txt
           pip install pyinstaller
+      - name: Install system dependencies (Linux/macOS)
+        if: runner.os == 'Linux' || runner.os == 'macOS'
+        run: |
+          if [ "$RUNNER_OS" == "Linux" ]; then
+            sudo apt-get update
+            sudo apt-get install -y libmagic-dev
+          elif [ "$RUNNER_OS" == "macOS" ]; then
+            brew install libmagic
+          fi
       - name: Build executable
         run: |
           pyinstaller AutoTidy.spec
