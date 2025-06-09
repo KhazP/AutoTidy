@@ -1297,3 +1297,44 @@ The AutoTidy application now has a clean, minimal dependency set that will insta
 
 ---
 
+_**User**_
+
+ok little problem, I'm launching the app, but it's not in the show hidden icons bar where it should be. I can see it in task manager, running, but I cant launch it because its not in the show hidden icons space. Also, when I stop it in task manager, it restarts itself for some reason.
+
+---
+
+_**Assistant**_
+
+I can help you debug this system tray icon issue. Let me examine the `main.py` file to see how the system tray is being implemented and check for any issues. Now let me check if there are any issues with the system tray icon implementation. I can see a few potential problems:
+
+1. The auto-restart issue suggests there might be a startup service enabled
+2. The system tray icon might not be showing properly
+
+Let me check the startup manager to see if there's an auto-start feature enabled: Now let me check if autostart is currently enabled by checking the Windows registry: That's good - autostart isn't enabled. Now let me check the system tray issues. Let me run the application in debug mode to see what's happening with the tray icon: Let me check if the system tray is available and if there are any QSystemTrayIcon issues. The problem might be that the system tray isn't available or the icon isn't being set properly. Let me add some debugging to the `main.py` file: 
+````
+
+````
+Let me fix the style issue: 
+```
+
+```
+I made an error in the replacement. Let me check the current state and fix it properly: I see the issue - the `else` got merged with the previous line. Let me fix this: 
+
+---
+
+_**User**_
+
+ok when you ran it, it worked perfectly. The copiled app in Build Executables action didn't work
+
+---
+
+_**Assistant**_
+
+Ah, that's a common issue with PyInstaller builds! The system tray icon works when running the Python script directly but fails in the compiled executable. Let me check the PyInstaller spec file and fix the build configuration. I can see the issue! The PyInstaller spec file is missing the icon file in the `datas` section. The icon is only specified as the executable icon, but the application needs access to the icon file at runtime for the system tray. Let me fix this: 
+```
+
+```
+Now I need to update the `main.py` file to handle the icon path correctly when running as a compiled executable. In 
+
+---
+

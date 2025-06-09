@@ -30,21 +30,31 @@ class AutoTidyApp(QApplication):
         super().__init__(argv)
         self.setQuitOnLastWindowClosed(False) # Keep running in tray
 
+        # Check if system tray is available
+        if not QSystemTrayIcon.isSystemTrayAvailable():
+            print("ERROR: System tray is not available on this system!", file=sys.stderr)
+            QMessageBox.critical(None, "AutoTidy Error", "System tray is not available on this system!")
+            sys.exit(1)
+
         self.config_manager = ConfigManager(APP_NAME) # Pass APP_NAME here
         self.log_queue = queue.Queue()
 
         # Create UI (initially hidden)
-        self.config_window = ConfigWindow(self.config_manager, self.log_queue)
-
-        # Create Tray Icon
+        self.config_window = ConfigWindow(self.config_manager, self.log_queue)        # Create Tray Icon
         self.tray_icon = QSystemTrayIcon(self)
+        
         # Set icon using QIcon(ICON_PATH)
         if os.path.exists(ICON_PATH):
-            self.tray_icon.setIcon(QIcon(ICON_PATH))
+            icon = QIcon(ICON_PATH)
+            self.tray_icon.setIcon(icon)
         else:
-            print(f"Warning: Icon file not found at {ICON_PATH}", file=sys.stderr)
-            # Optionally set a default Qt icon if desired
-            # self.tray_icon.setIcon(QApplication.style().standardIcon(QStyle.StandardPixmap.SP_ComputerIcon))
+            # Use a default Qt icon as fallback
+            from PyQt6.QtWidgets import QStyle
+            style = self.style()
+            if style:
+                icon = style.standardIcon(QStyle.StandardPixmap.SP_ComputerIcon)
+                self.tray_icon.setIcon(icon)
+            
         self.tray_icon.setToolTip(f"{APP_NAME} is running")
         self.tray_icon.show()
 
