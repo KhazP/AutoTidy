@@ -3,11 +3,14 @@ import shutil
 from pathlib import Path
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QTableWidget, QTableWidgetItem, QPushButton,
-    QAbstractItemView, QHBoxLayout, QHeaderView, QMessageBox
+    QAbstractItemView, QHBoxLayout, QHeaderView, QMessageBox, QFileDialog,
+    QLabel, QLineEdit, QComboBox, QDateEdit, QGridLayout
 )
-from PyQt6.QtGui import QKeySequence # Added
-from PyQt6.QtCore import Qt
-import constants # Assuming constants.py contains ACTION_MOVED and STATUS_SUCCESS
+from PyQt6.QtGui import QKeySequence
+from PyQt6.QtCore import Qt, QDateTime
+from datetime import datetime # Added to resolve datetime undefined error
+import constants
+import csv # For CSV export
 
 # ConfigManager is not directly imported if only its path method is used via a passed instance.
 
@@ -18,19 +21,82 @@ class HistoryViewerDialog(QDialog):
         super().__init__(parent)
         self.config_manager = config_manager
         self.history_manager = history_manager
+        self.all_history_data = [] # Store all loaded history data
 
         self.setWindowTitle("AutoTidy Action History")
-        self.setMinimumSize(800, 400) # Set a reasonable minimum size
+        self.setMinimumSize(900, 500) # Adjusted size for new elements
 
-        layout = QVBoxLayout(self)
+        main_layout = QVBoxLayout(self)
+
+        # Filter Layout
+        filter_group_layout = QGridLayout()
+
+        # Date Filter
+        filter_group_layout.addWidget(QLabel("Filter by Date:"), 0, 0)
+        self.dateFilter = QDateEdit()
+        self.dateFilter.setCalendarPopup(True)
+        self.dateFilter.setDateTime(QDateTime.currentDateTime().addDays(-7)) # Default to last 7 days
+        self.dateFilter.setDisplayFormat("yyyy-MM-dd")
+        self.dateFilter.setToolTip("Show logs from this date onwards.")
+        filter_group_layout.addWidget(self.dateFilter, 0, 1)
+        self.dateFilter.dateChanged.connect(self.apply_filters)
+
+
+        # Folder Filter
+        filter_group_layout.addWidget(QLabel("Filter by Folder:"), 0, 2)
+        self.folderFilter = QLineEdit()
+        self.folderFilter.setPlaceholderText("Enter monitored folder path (partial match)")
+        self.folderFilter.setToolTip("Filter by monitored folder containing this text.")
+        filter_group_layout.addWidget(self.folderFilter, 0, 3)
+        self.folderFilter.textChanged.connect(self.apply_filters)
+
+        # Action Type Filter
+        filter_group_layout.addWidget(QLabel("Filter by Action:"), 1, 0)
+        self.actionFilter = QComboBox()
+        self.actionFilter.addItem("All Actions", "")
+        # Populate with known actions from constants.py
+        self.actionFilter.addItems([
+            constants.ACTION_MOVED,
+            constants.ACTION_COPIED,
+            constants.ACTION_DELETED_TO_TRASH,
+            constants.ACTION_PERMANENTLY_DELETED,
+            constants.ACTION_SIMULATED_MOVE,
+            constants.ACTION_SIMULATED_COPY,
+            constants.ACTION_SIMULATED_DELETE_TO_TRASH,
+            constants.ACTION_SIMULATED_PERMANENT_DELETE,
+            constants.ACTION_ERROR,
+            constants.ACTION_UNDO_MOVE
+        ])
+        self.actionFilter.setToolTip("Filter by the type of action performed.")
+        filter_group_layout.addWidget(self.actionFilter, 1, 1)
+        self.actionFilter.currentIndexChanged.connect(self.apply_filters)
+
+        # Severity Filter
+        filter_group_layout.addWidget(QLabel("Filter by Severity:"), 1, 2)
+        self.severityFilter = QComboBox()
+        self.severityFilter.addItem("All Severities", "")
+        self.severityFilter.addItem("INFO", "INFO")
+        self.severityFilter.addItem("WARNING", "WARNING") # Assuming you might add WARNING status/severity
+        self.severityFilter.addItem("ERROR", "ERROR") # Corresponds to STATUS_FAILURE
+        self.severityFilter.setToolTip("Filter by log severity (INFO, WARNING, ERROR).")
+        filter_group_layout.addWidget(self.severityFilter, 1, 3)
+        self.severityFilter.currentIndexChanged.connect(self.apply_filters)
+        
+        # Apply Filters Button (Manual refresh of filters)
+        self.applyFilterButton = QPushButton("Apply Filters")
+        self.applyFilterButton.setToolTip("Manually apply all active filters.")
+        self.applyFilterButton.clicked.connect(self.apply_filters)
+        filter_group_layout.addWidget(self.applyFilterButton, 1, 4)
+
+
+        main_layout.addLayout(filter_group_layout)
 
         # Table Widget
         self.historyTable = QTableWidget()
         self.column_headers = [
-            "Timestamp", "Action Taken", "Original Path", "Destination Path",
+            "Timestamp", "Action Taken", "Severity", "Original Path", "Destination Path",
             "Status", "Details", "Monitored Folder", "Rule Pattern",
             "Rule Age", "Rule Regex"
-            # Consider adding "Rule Action Config" if useful
         ]
         self.historyTable.setColumnCount(len(self.column_headers))
         self.historyTable.setHorizontalHeaderLabels(self.column_headers)
@@ -43,38 +109,47 @@ class HistoryViewerDialog(QDialog):
             header.setSectionResizeMode(self.column_headers.index("Details"), QHeaderView.ResizeMode.Stretch)
             # Allow manual resize for other columns initially, then resize to contents
             for i in range(len(self.column_headers)):
-                if i != self.column_headers.index("Details"):
+                if i != self.column_headers.index("Details"): # Ensure "Details" is still stretched
                     header.setSectionResizeMode(i, QHeaderView.ResizeMode.Interactive)
+                if self.column_headers[i] == "Timestamp": # Give timestamp a bit more space
+                     header.setSectionResizeMode(i, QHeaderView.ResizeMode.ResizeToContents)
 
-        layout.addWidget(self.historyTable)
+
+        main_layout.addWidget(self.historyTable)
 
         # Buttons Layout
         buttons_layout = QHBoxLayout()
 
-        self.undoButton = QPushButton("&Undo Selected Action") # Added &
+        self.undoButton = QPushButton("&Undo Selected Action")
         self.undoButton.setToolTip("Undo the selected file operation (Ctrl+Z if focus is on table/button)")
         self.undoButton.clicked.connect(self.handle_undo_action)
         buttons_layout.addWidget(self.undoButton)
+        
+        self.exportButton = QPushButton("E&xport Logs")
+        self.exportButton.setToolTip("Export the currently visible logs to a CSV file.")
+        self.exportButton.clicked.connect(self.export_logs)
+        buttons_layout.addWidget(self.exportButton)
 
-        buttons_layout.addStretch(1) # Add stretch before refresh to push undo to left
+        buttons_layout.addStretch(1)
 
-        self.refreshButton = QPushButton("&Refresh") # Added &
-        self.refreshButton.setToolTip("Reload the action history (F5)")
-        self.refreshButton.clicked.connect(self.load_history)
+        self.refreshButton = QPushButton("&Refresh All")
+        self.refreshButton.setToolTip("Reload all action history, clearing filters (F5).")
+        self.refreshButton.clicked.connect(self.load_history_data)
         buttons_layout.addWidget(self.refreshButton)
 
-        buttons_layout.addStretch(1) # Add stretch between refresh and close
+        buttons_layout.addStretch(1)
 
-        self.closeButton = QPushButton("&Close") # Added &
+        self.closeButton = QPushButton("&Close")
         self.closeButton.setToolTip("Close this window (Esc)")
         self.closeButton.clicked.connect(self.accept)
         buttons_layout.addWidget(self.closeButton)
 
-        layout.addLayout(buttons_layout)
+        main_layout.addLayout(buttons_layout)
 
         self.historyTable.itemSelectionChanged.connect(self.update_undo_button_state)
 
-        self.load_history()
+        self.load_history_data() # Load all data first
+        self.apply_filters() # Then apply default filters
         self.update_undo_button_state() # Initial state
         self._setup_shortcuts() # Call new method
         self.historyTable.setFocus() # Set initial focus
@@ -95,7 +170,8 @@ class HistoryViewerDialog(QDialog):
         if event.key() == Qt.Key.Key_Escape:
             self.accept() # Close on Escape
         elif event.key() == Qt.Key.Key_F5:
-            self.load_history() # Refresh on F5
+            self.load_history_data() # Reload all data
+            self.apply_filters() # Reapply filters
         # Ctrl+Z for undo if table has focus and an item is undoable
         elif event.matches(QKeySequence.StandardKey.Undo): # Checks for Ctrl+Z or platform equivalent
             if self.undoButton.isEnabled():
@@ -139,7 +215,7 @@ class HistoryViewerDialog(QDialog):
             # Pre-move checks
             if not destination_file.exists():
                 QMessageBox.warning(self, "Undo Failed", f"The file to undo does not exist: {destination_file}")
-                self.load_history() # Refresh history, as the file's status might have changed
+                self.load_history_data() # Refresh history, as the file's status might have changed
                 return
 
             if original_path_target.exists():
@@ -174,12 +250,33 @@ class HistoryViewerDialog(QDialog):
 
                 QMessageBox.information(self, "Success", f"Action undone. File moved from '{destination_file}' back to '{original_path_target}'.")
 
-                self.load_history() # Refresh history to show the UNDO_MOVE entry
+                self.load_history_data() # Refresh history to show the UNDO_MOVE entry
 
             except (IOError, OSError) as e:
                 QMessageBox.critical(self, "Move Error", f"Error moving file: {e}")
+                # Log this failure as well
+                self.history_manager.log_action({
+                    "action_taken": "UNDO_ERROR", 
+                    "original_path": str(destination_file) if 'destination_file' in locals() else "N/A",
+                    "destination_path": str(original_path_target) if 'original_path_target' in locals() else "N/A",
+                    "status": constants.STATUS_FAILURE,
+                    "severity": "ERROR", # Add severity
+                    "details": f"Failed to undo action. Error: {e}"
+                })
+                self.load_history_data()
+                self.apply_filters()
             except Exception as e:
                 QMessageBox.critical(self, "Unexpected Error", f"An unexpected error occurred: {e}")
+                self.history_manager.log_action({
+                    "action_taken": "UNDO_ERROR",
+                    "original_path": "N/A",
+                    "destination_path": "N/A",
+                    "status": constants.STATUS_FAILURE,
+                    "severity": "ERROR", # Add severity
+                    "details": f"Unexpected error during undo: {e}"
+                })
+                self.load_history_data()
+                self.apply_filters()
 
         except IndexError:
              QMessageBox.critical(self, "Error", "Could not correctly interpret history data for undo.")
@@ -197,111 +294,168 @@ class HistoryViewerDialog(QDialog):
             self.undoButton.setEnabled(False)
             return
 
+        # Ensure this logic correctly reflects if an item is undoable based on its "Action Taken"
+        # For example, "UNDO_MOVE" or "ERROR" actions should not be undoable.
         if not selected_items or len(selection_model.selectedRows()) != 1:
             self.undoButton.setEnabled(False)
             return
 
-        selected_row = self.historyTable.currentRow()
-        if selected_row < 0: # Should not happen if selected_items is not empty and 1 row selected
+        selected_row = selection_model.selectedRows()[0].row()
+        action_item = self.historyTable.item(selected_row, self.column_headers.index("Action Taken"))
+        status_item = self.historyTable.item(selected_row, self.column_headers.index("Status"))
+
+        if action_item and status_item:
+            action_text = action_item.text()
+            status_text = status_item.text()
+            # Only enable undo for successful "MOVED" or "COPIED" actions (adjust as needed)
+            is_undoable_action = action_text in [constants.ACTION_MOVED, constants.ACTION_COPIED] # Example
+            is_successful = status_text == constants.STATUS_SUCCESS
+            self.undoButton.setEnabled(is_undoable_action and is_successful)
+        else:
             self.undoButton.setEnabled(False)
+
+
+    def load_history_data(self):
+        """Loads all history data from the file and stores it."""
+        self.all_history_data = []
+        history_file = self.history_manager.history_file_path # Use the path from history_manager
+        if not history_file.exists():
+            # QMessageBox.information(self, "History", "No history data found.")
+            # No need for a message if the file simply doesn't exist yet.
+            self.apply_filters() # Apply to an empty list to clear table
             return
 
         try:
-            action_item = self.historyTable.item(selected_row, self.column_headers.index("Action Taken"))
-            status_item = self.historyTable.item(selected_row, self.column_headers.index("Status"))
-
-            if action_item and status_item:
-                action_text = action_item.text()
-                status_text = status_item.text()
-
-                # Assuming constants.ACTION_MOVED and constants.STATUS_SUCCESS are defined
-                # e.g., ACTION_MOVED = "MOVED", STATUS_SUCCESS = "SUCCESS"
-                if action_text == constants.ACTION_MOVED and status_text == constants.STATUS_SUCCESS:
-                    self.undoButton.setEnabled(True)
-                else:
-                    self.undoButton.setEnabled(False)
-            else:
-                self.undoButton.setEnabled(False)
-        except IndexError:
-            # This might happen if column_headers doesn't contain "Action Taken" or "Status"
-            # Or if the row/column index is somehow out of bounds despite checks.
-            print("Error: Could not find 'Action Taken' or 'Status' column for undo logic.")
-            self.undoButton.setEnabled(False)
-        except Exception as e:
-            print(f"Error updating undo button state: {e}")
-            self.undoButton.setEnabled(False)
-
-
-    def load_history(self):
-        """Loads history from the JSONL file into the table."""
-        self.historyTable.setSortingEnabled(False) # Disable sorting during load for performance
-        self.historyTable.setRowCount(0) # Clear table
-
-        history_file_path = self.config_manager.get_config_dir_path() / "autotidy_history.jsonl"
-
-        if not history_file_path.exists():
-            # Optionally show a message in the table or a status bar
-            # For now, just means an empty table, which is fine.
-            print(f"History file not found: {history_file_path}")
-            self.historyTable.setSortingEnabled(True)
-            return
-
-        try:
-            with open(history_file_path, 'r', encoding='utf-8') as f:
-                for line_number, line in enumerate(f):
+            with open(history_file, 'r', encoding='utf-8') as f:
+                for line in f:
                     try:
                         log_entry = json.loads(line.strip())
-                        if not isinstance(log_entry, dict):
-                            print(f"Warning: Skipping non-dict entry in history file at line {line_number + 1}")
-                            continue
-
-                        row_position = self.historyTable.rowCount()
-                        self.historyTable.insertRow(row_position)
-
-                        # Populate cells based on headers - this ensures order and handles missing keys
-                        for col_idx, header_key_original in enumerate(self.column_headers):
-                            # Convert header to snake_case for dictionary lookup if necessary,
-                            # or ensure log_entry keys match headers directly (preferable)
-                            # Current log_entry keys are already snake_case and match these well if we map.
-                            key_map = {
-                                "Timestamp": "timestamp",
-                                "Action Taken": "action_taken",
-                                "Original Path": "original_path",
-                                "Destination Path": "destination_path",
-                                "Status": "status",
-                                "Details": "details",
-                                "Monitored Folder": "monitored_folder",
-                                "Rule Pattern": "rule_pattern",
-                                "Rule Age": "rule_age_days", # dict key is rule_age_days
-                                "Rule Regex": "rule_use_regex" # dict key is rule_use_regex
-                            }
-                            dict_key = key_map.get(header_key_original, header_key_original.lower().replace(" ", "_"))
-                            cell_value = str(log_entry.get(dict_key, '')) # Default to empty string if key missing
-
-                            item = QTableWidgetItem(cell_value)
-                            # Timestamps can be long, consider special handling if needed
-                            self.historyTable.setItem(row_position, col_idx, item)
-
+                        # Ensure severity is present, default if not
+                        if "severity" not in log_entry:
+                            if log_entry.get("status") == constants.STATUS_FAILURE:
+                                log_entry["severity"] = "ERROR"
+                            elif log_entry.get("status") == constants.STATUS_SUCCESS: # or other non-failure statuses
+                                log_entry["severity"] = "INFO"
+                            else: # Default or for warnings if we add them
+                                log_entry["severity"] = "INFO" # Default to INFO
+                        self.all_history_data.append(log_entry)
                     except json.JSONDecodeError:
-                        print(f"Warning: Skipping malformed JSON line in history file at line {line_number + 1}: {line.strip()}")
-                    except Exception as e_inner:
-                        print(f"Error processing history entry at line {line_number + 1}: {e_inner}")
-
-
+                        print(f"Skipping malformed line in history: {line.strip()}") # Log to console
+            self.all_history_data.sort(key=lambda x: x.get("timestamp", ""), reverse=True) # Sort by timestamp descending
         except IOError as e:
-            print(f"Error reading history file {history_file_path}: {e}")
-            # Show error to user? For now, console.
-        except Exception as e_outer:
-            print(f"Unexpected error loading history: {e_outer}")
+            QMessageBox.critical(self, "Error Loading History", f"Could not read history file: {e}")
+            self.all_history_data = [] # Clear data on error
+        
+        # After loading all data, apply current filters
+        self.apply_filters()
 
-        self.historyTable.resizeColumnsToContents()
-        # Re-enable sorting after data is loaded
+
+    def apply_filters(self):
+        """Filters the loaded history data and updates the table display."""
+        self.historyTable.setRowCount(0) # Clear existing rows
+        self.historyTable.setSortingEnabled(False) # Disable sorting during population
+
+        # Get filter values
+        selected_date_str = self.dateFilter.date().toString("yyyy-MM-dd")
+        folder_query = self.folderFilter.text().lower()
+        action_query = self.actionFilter.currentData() if self.actionFilter.currentIndex() > 0 else self.actionFilter.currentText()
+        if action_query == "All Actions": action_query = "" # Treat "All Actions" as no filter
+            
+        severity_query = self.severityFilter.currentData() if self.severityFilter.currentIndex() > 0 else ""
+        if severity_query == "All Severities": severity_query = ""
+
+
+        filtered_data = []
+        for entry in self.all_history_data:
+            # Date filter: entry timestamp should be on or after selected_date_str
+            timestamp_str = entry.get("timestamp", "")
+            try:
+                entry_date_str = datetime.fromisoformat(timestamp_str.replace("Z", "+00:00")).strftime("%Y-%m-%d")
+                if entry_date_str < selected_date_str:
+                    continue
+            except ValueError:
+                # If timestamp is malformed, skip or include based on preference. Here, we skip.
+                continue
+
+            # Folder filter
+            monitored_folder = entry.get("monitored_folder", "").lower()
+            if folder_query and folder_query not in monitored_folder:
+                continue
+
+            # Action Type filter
+            action_taken = entry.get("action_taken", "")
+            if action_query and action_query != action_taken:
+                continue
+            
+            # Severity filter
+            severity = entry.get("severity", "INFO").upper() # Default to INFO if not present
+            if severity_query and severity_query != severity:
+                continue
+
+            filtered_data.append(entry)
+
+        self.historyTable.setRowCount(len(filtered_data))
+        for row, log_entry in enumerate(filtered_data):
+            self.historyTable.setItem(row, self.column_headers.index("Timestamp"), QTableWidgetItem(log_entry.get("timestamp", "")))
+            self.historyTable.setItem(row, self.column_headers.index("Action Taken"), QTableWidgetItem(log_entry.get("action_taken", "")))
+            self.historyTable.setItem(row, self.column_headers.index("Severity"), QTableWidgetItem(log_entry.get("severity", "INFO")))
+            self.historyTable.setItem(row, self.column_headers.index("Original Path"), QTableWidgetItem(log_entry.get("original_path", "")))
+            self.historyTable.setItem(row, self.column_headers.index("Destination Path"), QTableWidgetItem(log_entry.get("destination_path", "")))
+            self.historyTable.setItem(row, self.column_headers.index("Status"), QTableWidgetItem(log_entry.get("status", "")))
+            self.historyTable.setItem(row, self.column_headers.index("Details"), QTableWidgetItem(log_entry.get("details", "")))
+            self.historyTable.setItem(row, self.column_headers.index("Monitored Folder"), QTableWidgetItem(log_entry.get("monitored_folder", "")))
+            self.historyTable.setItem(row, self.column_headers.index("Rule Pattern"), QTableWidgetItem(log_entry.get("rule_pattern", "")))
+            self.historyTable.setItem(row, self.column_headers.index("Rule Age"), QTableWidgetItem(str(log_entry.get("rule_age_days", ""))))
+            self.historyTable.setItem(row, self.column_headers.index("Rule Regex"), QTableWidgetItem(str(log_entry.get("rule_use_regex", ""))))
+
         self.historyTable.setSortingEnabled(True)
-        # Default sort by timestamp, descending
-        timestamp_col_index = self.column_headers.index("Timestamp")
-        if timestamp_col_index != -1:
-            self.historyTable.sortByColumn(timestamp_col_index, Qt.SortOrder.DescendingOrder)
-        self.update_undo_button_state() # Update button state after loading history
+        self.historyTable.resizeColumnsToContents()
+        # Re-apply stretch to "Details" if necessary, and specific width for Timestamp
+        header = self.historyTable.horizontalHeader()
+        if header:
+            header.setSectionResizeMode(self.column_headers.index("Details"), QHeaderView.ResizeMode.Stretch)
+            # Timestamp might need a minimum width or resize to contents again
+            ts_col_index = self.column_headers.index("Timestamp")
+            header.setSectionResizeMode(ts_col_index, QHeaderView.ResizeMode.ResizeToContents)
+            # Ensure other columns are interactive
+            for i in range(len(self.column_headers)):
+                if i not in [self.column_headers.index("Details"), ts_col_index]:
+                    header.setSectionResizeMode(i, QHeaderView.ResizeMode.Interactive)
+        self.update_undo_button_state()
+
+
+    def export_logs(self):
+        """Exports the currently displayed (filtered) logs to a CSV file."""
+        if self.historyTable.rowCount() == 0:
+            QMessageBox.information(self, "Export Logs", "There are no logs to export.")
+            return
+
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "Save Logs", "", "CSV Files (*.csv);;Text Files (*.txt)"
+        )
+
+        if not file_path:
+            return
+
+        try:
+            with open(file_path, 'w', newline='', encoding='utf-8') as csvfile:
+                writer = csv.writer(csvfile)
+                # Write headers
+                writer.writerow(self.column_headers)
+                # Write data rows
+                for row in range(self.historyTable.rowCount()):
+                    row_data = []
+                    for column in range(self.historyTable.columnCount()):
+                        item = self.historyTable.item(row, column)
+                        row_data.append(item.text() if item else "")
+                    writer.writerow(row_data)
+            QMessageBox.information(self, "Export Successful", f"Logs successfully exported to {file_path}")
+        except IOError as e:
+            QMessageBox.critical(self, "Export Error", f"Could not write to file: {e}")
+
+    # Remove the old load_history method as its functionality is now in load_history_data and apply_filters
+    # def load_history(self):
+    # ... (old implementation)
 
 
 if __name__ == '__main__':

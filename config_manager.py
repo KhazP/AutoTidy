@@ -74,6 +74,8 @@ class ConfigManager:
                             folder_item['use_regex'] = False
                         folder_item.setdefault('action', 'move') # Add default for action
                         folder_item.setdefault('exclusions', []) # Add default for exclusions
+                        folder_item.setdefault('destination_folder', '') # Add default for destination_folder
+                        folder_item.setdefault('enabled', True) # Add default for enabled
                     return config_data
                 # Handle migration from old list format
                 elif isinstance(config_data, list):
@@ -87,6 +89,8 @@ class ConfigManager:
                              item.setdefault('use_regex', False) # Ensure use_regex default during migration
                              item.setdefault('action', 'move')   # Ensure action default during migration
                              item.setdefault('exclusions', [])   # Ensure exclusions default during migration
+                             item.setdefault('destination_folder', '') # Ensure destination_folder default during migration
+                             item.setdefault('enabled', True) # Ensure enabled default during migration
                              valid_folders.append(item)
                          else:
                              print(f"Warning: Skipping invalid folder item during migration: {item}", file=sys.stderr)
@@ -125,19 +129,41 @@ class ConfigManager:
         """Returns just the list of monitored folder configurations."""
         return self.config.get('folders', [])
 
-    def add_folder(self, path: str, age_days: int = 7, pattern: str = "*.*") -> bool:
-        """Adds a new folder configuration."""
-        folders = self.config.setdefault('folders', []) # Ensure 'folders' key exists
+    def add_folder(self, path: str, rule_def: dict | None = None) -> bool:
+        """Adds a new folder configuration.
+        If rule_def is provided, it's used to populate the rule details.
+        Otherwise, default rules are applied.
+        """
+        folders = self.config.setdefault('folders', [])
         if not any(item['path'] == path for item in folders):
-            folders.append({
-                'path': path,
-                'age_days': age_days,
-                'pattern': pattern,
-                'rule_logic': 'OR',
-                'use_regex': False, # Add default use_regex field
-                'action': 'move',   # Add default action field
-                'exclusions': []    # Add default exclusions field
-            })
+            if rule_def:
+                # Use provided rule definition from template
+                # Ensure all necessary keys are present, with defaults
+                new_folder_config = {
+                    'path': path,
+                    'age_days': rule_def.get('days_older_than', 0),
+                    'pattern': rule_def.get('file_pattern', '*.*'),
+                    'rule_logic': rule_def.get('rule_logic', 'OR'),
+                    'use_regex': rule_def.get('use_regex', False),
+                    'action': rule_def.get('action', 'move'),
+                    'destination_folder': rule_def.get('destination_folder', ''),
+                    'exclusions': rule_def.get('exclusions', []),
+                    'enabled': rule_def.get('enabled', True)
+                }
+            else:
+                # Default rule if no rule_def is provided
+                new_folder_config = {
+                    'path': path,
+                    'age_days': 7, # Default age
+                    'pattern': '*.*', # Default pattern
+                    'rule_logic': 'OR',
+                    'use_regex': False,
+                    'action': 'move',
+                    'destination_folder': '', # Default empty
+                    'exclusions': [],
+                    'enabled': True
+                }
+            folders.append(new_folder_config)
             self.save_config()
             return True
         return False # Path already exists
@@ -152,7 +178,7 @@ class ConfigManager:
             return True
         return False # Path not found
 
-    def update_folder_rule(self, path: str, age_days: int, pattern: str, rule_logic: str, use_regex: bool, action: str, exclusions: list[str]) -> bool:
+    def update_folder_rule(self, path: str, age_days: int, pattern: str, rule_logic: str, use_regex: bool, action: str, exclusions: list[str], destination_folder: str | None = None, enabled: bool | None = None) -> bool:
         """Updates the rules for a specific folder path."""
         folders = self.config.setdefault('folders', [])
         for item in folders:
@@ -161,8 +187,15 @@ class ConfigManager:
                 item['pattern'] = pattern
                 item['rule_logic'] = rule_logic
                 item['use_regex'] = use_regex
-                item['action'] = action # Save the new action field
-                item['exclusions'] = exclusions # Save the new exclusions field
+                item['action'] = action
+                item['exclusions'] = exclusions
+                if destination_folder is not None:
+                    item['destination_folder'] = destination_folder
+                if enabled is not None:
+                    item['enabled'] = enabled
+                # Ensure these keys exist if they were not part of older configs
+                item.setdefault('destination_folder', '')
+                item.setdefault('enabled', True)
                 self.save_config()
                 return True
         return False # Path not found

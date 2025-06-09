@@ -2,6 +2,7 @@ import json
 from datetime import datetime, timezone, timedelta # timedelta might not be needed here, but good for datetime context
 from pathlib import Path
 import sys # For potential error logging to stderr
+import constants # Added to resolve constants not defined error
 
 class HistoryManager:
     """Manages logging of file actions to a history file."""
@@ -36,6 +37,8 @@ class HistoryManager:
         Args:
             data: A dictionary containing the action details.
                   The timestamp will be added/overwritten by this method.
+                  A "severity" field (e.g., "INFO", "ERROR", "WARNING") will be added if not present,
+                  defaulting based on "status".
         """
         if not self.history_file_path.parent.exists():
             # If directory creation failed earlier, don't attempt to log.
@@ -43,6 +46,16 @@ class HistoryManager:
             return
 
         data["timestamp"] = datetime.now(timezone.utc).isoformat()
+
+        # Ensure severity is present
+        if "severity" not in data:
+            if data.get("status") == constants.STATUS_FAILURE:
+                data["severity"] = "ERROR"
+            # Add elif for WARNING if a specific status maps to it
+            # elif data.get("status") == constants.STATUS_WARNING: # Example
+            #     data["severity"] = "WARNING"
+            else: # Default for SUCCESS or other statuses
+                data["severity"] = "INFO"
 
         try:
             with open(self.history_file_path, 'a', encoding='utf-8') as f:

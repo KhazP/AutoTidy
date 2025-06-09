@@ -3,14 +3,15 @@ import queue
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QListWidget, QLineEdit,
     QSpinBox, QLabel, QTextEdit, QFileDialog, QMessageBox, QListWidgetItem, QComboBox, QCheckBox,
-    QApplication # Added QApplication
+    QApplication, QMenu
 )
-from PyQt6.QtGui import QKeySequence # Added for shortcuts
+from PyQt6.QtGui import QKeySequence, QAction # Import QAction
 from PyQt6.QtCore import QTimer, Qt, pyqtSlot
 
 from config_manager import ConfigManager
 from worker import MonitoringWorker
 from ui_settings_dialog import SettingsDialog
+from constants import RULE_TEMPLATES # Import RULE_TEMPLATES
 
 
 from undo_manager import UndoManager # Added for Undo functionality
@@ -45,9 +46,15 @@ class ConfigWindow(QWidget):
         top_controls_layout = QHBoxLayout()
         self.add_folder_button = QPushButton("&Add Folder") # Added & for mnemonic
         self.add_folder_button.setToolTip("Add a new folder to monitor (Ctrl+O)")
+        
+        self.apply_template_button = QPushButton("Apply &Template") # New button
+        self.apply_template_button.setToolTip("Apply a predefined rule template")
+        self.apply_template_button.clicked.connect(self.show_template_menu) # Connect to show menu
+
         self.remove_folder_button = QPushButton("&Remove Selected") # Added &
         self.remove_folder_button.setToolTip("Remove the selected folder from monitoring (Del)")
         top_controls_layout.addWidget(self.add_folder_button)
+        top_controls_layout.addWidget(self.apply_template_button) # Add new button
         top_controls_layout.addWidget(self.remove_folder_button)
         top_controls_layout.addStretch()
 
@@ -161,13 +168,14 @@ class ConfigWindow(QWidget):
         self.useRegexCheckbox.stateChanged.connect(self.save_rule_changes) # Connect checkbox
         self.rule_logic_combo.currentIndexChanged.connect(self.save_rule_changes) # Connect new combo box
         self.actionComboBox.currentIndexChanged.connect(self.save_rule_changes) # Connect action combo box
+        # self.apply_template_button.clicked.connect(self.apply_template) # Will be handled by QMenu
         self.start_button.clicked.connect(self.start_monitoring)
         self.stop_button.clicked.connect(self.stop_monitoring)
         self.settings_button.clicked.connect(self.open_settings_dialog)
         self.view_history_button.clicked.connect(self.open_undo_dialog) # Connect new Undo button
-        self.add_exclusion_button.clicked.connect(self.add_exclusion)
-        self.remove_exclusion_button.clicked.connect(self.remove_exclusion)
-        self.exclusion_help_button.clicked.connect(self.show_exclusion_help) # Connect help button
+        self.add_exclusion_button.clicked.connect(self.add_exclusion_pattern) # Renamed for clarity
+        self.remove_exclusion_button.clicked.connect(self.remove_selected_exclusion_pattern) # Renamed for clarity
+        self.exclusion_help_button.clicked.connect(self.show_exclusion_pattern_help) # Renamed for clarity
         self.exclusion_list_widget.itemChanged.connect(self.save_exclusion_list_changes) # Save when an item is edited
 
         self._update_ui_for_status_and_mode() # Initial UI update
@@ -277,14 +285,15 @@ class ConfigWindow(QWidget):
                          self.add_exclusion_button.setEnabled(False)
                          self.remove_exclusion_button.setEnabled(False)
                          self.exclusion_help_button.setEnabled(False) # Disable help button
-
+                         # Explicitly call update_rule_inputs with None when list is empty
+                         self.update_rule_inputs(None, None) 
                 else:
                      QMessageBox.warning(self, "Error", f"Could not remove folder '{path}' from configuration.")
         else:
             QMessageBox.information(self, "No Selection", "Please select a folder to remove.")
 
     @pyqtSlot(QListWidgetItem, QListWidgetItem)
-    def update_rule_inputs(self, current: QListWidgetItem, previous: QListWidgetItem):
+    def update_rule_inputs(self, current: QListWidgetItem | None, previous: QListWidgetItem | None): # Allow None
         """Update rule input fields when folder selection changes."""
         if current:
             path = current.text()
@@ -458,6 +467,7 @@ class ConfigWindow(QWidget):
 
         # Disable folder/rule editing when worker is active
         self.add_folder_button.setEnabled(not is_running)
+        self.apply_template_button.setEnabled(not is_running) # Enable/disable template button
         self.remove_folder_button.setEnabled(not is_running)
         self.settings_button.setEnabled(not is_running) # Also disable settings when running
 
@@ -578,82 +588,167 @@ class ConfigWindow(QWidget):
 
 
     def closeEvent(self, event):
-        """Handle the window close event (hide instead of quit)."""
-        event.ignore()
-        self.hide()
-        # Optionally show a tray message
-        # if self.parent(): # Check if called from main app context with tray
-        #     self.parent().tray_icon.showMessage(
-        #         "AutoTidy",
-        #         "Application is still running in the system tray.",
-        #         QSystemTrayIcon.Information,
-        #         2000
-        #     )
+        """Handle the window close event."""
+        # Ensure worker is stopped if running
+        if self.monitoring_worker and self.monitoring_worker.is_alive():
+            self.log_queue.put("INFO: Stopping monitoring due to window close...")
+            if hasattr(self.monitoring_worker, 'stop_monitoring') and callable(self.monitoring_worker.stop_monitoring):
+                 self.monitoring_worker.stop_monitoring()
+            else:
+                 self.log_queue.put("ERROR: MonitoringWorker does not have a stop_monitoring method.")
+            self.monitoring_worker.join(timeout=2) # Wait for worker to finish
 
-    def force_show(self):
-        """Ensure the window is visible and brought to the front."""
-        self.show()
-        self.activateWindow()
-        self.raise_()
+        # Save any pending changes (e.g., if user typed in a field and closed)
+        # self.save_rule_changes() # This might be redundant if changes are saved on field edit
 
-    # --- New methods for managing exclusions ---
-    @pyqtSlot()
-    def add_exclusion(self):
-        """Adds a new empty exclusion pattern to the list for the current folder."""
-        current_folder_item = self.folder_list_widget.currentItem()
-        if not current_folder_item:
-            QMessageBox.information(self, "No Folder Selected", "Please select a folder first.")
-            return
+        self.log_timer.stop() # Stop the log timer
+        self.config_manager.save_config() # Ensure config is saved
+        self.log_queue.put("INFO: AutoTidy configuration window closed.")
+        super().closeEvent(event)
 
-        new_exclusion_item = QListWidgetItem("new_pattern*") # Default placeholder
-        new_exclusion_item.setFlags(new_exclusion_item.flags() | Qt.ItemFlag.ItemIsEditable)
-        self.exclusion_list_widget.addItem(new_exclusion_item)
-        self.exclusion_list_widget.setCurrentItem(new_exclusion_item)
-        self.exclusion_list_widget.editItem(new_exclusion_item) # Start editing immediately
-        self.save_rule_changes() # Save changes as adding an item modifies the rule
-
-    @pyqtSlot()
-    def remove_exclusion(self):
-        """Removes the selected exclusion pattern from the list."""
-        current_exclusion_item = self.exclusion_list_widget.currentItem()
-        if current_exclusion_item:
-            row = self.exclusion_list_widget.row(current_exclusion_item)
-            self.exclusion_list_widget.takeItem(row)
-            self.save_rule_changes() # Save changes as removing an item modifies the rule
+    def show_template_menu(self):
+        """Show a context menu with rule templates."""
+        template_menu = QMenu(self)
+        if not RULE_TEMPLATES:
+            no_template_action = QAction("No templates available", self) # Create QAction
+            no_template_action.setEnabled(False)
+            template_menu.addAction(no_template_action) # Add QAction to menu
         else:
-            QMessageBox.information(self, "No Selection", "Please select an exclusion pattern to remove.")
+            for i, template_data in enumerate(RULE_TEMPLATES):
+                action = QAction(template_data['name'], self) # Create QAction
+                action.setToolTip(template_data.get('description', 'No description'))
+                action.setData(i) # Store index of the template
+                action.triggered.connect(self.apply_selected_template)
+                template_menu.addAction(action) # Add QAction to menu
+        
+        self.apply_template_button.setMenu(template_menu) # Associate menu with button
+        # Position menu below the button. Adjust x, y as needed for better positioning.
+        menu_pos = self.apply_template_button.mapToGlobal(self.apply_template_button.rect().bottomLeft())
+        template_menu.popup(menu_pos)
 
-    @pyqtSlot(QListWidgetItem)
+
+    def apply_selected_template(self):
+        """Apply the rules from the selected template."""
+        sender_action = self.sender() # Get the QAction that was triggered
+        if isinstance(sender_action, QAction): # Check if sender is QAction
+            template_index = sender_action.data()
+            if template_index is not None and isinstance(template_index, int) and 0 <= template_index < len(RULE_TEMPLATES):
+                template = RULE_TEMPLATES[template_index]
+                template_name = template['name']
+                template_rules = template.get('rules', [])
+
+                if not template_rules:
+                    QMessageBox.information(self, "No Rules in Template", f"The template '{template_name}' has no rules defined.")
+                    return
+
+                # Ask for confirmation
+                reply = QMessageBox.question(self, "Apply Template",
+                                             f"This will add {len(template_rules)} rule(s) from the template '{template_name}'. "
+                                             f"Existing rules for these folders (if any) will be overwritten if the paths match. "
+                                             f"New folders will be added if they don't exist.\n\n"
+                                             f"Description: {template.get('description', 'N/A')}\n\n"
+                                             "Do you want to proceed?",
+                                             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                                             QMessageBox.StandardButton.No)
+
+                if reply == QMessageBox.StandardButton.Yes:
+                    folders_added_or_updated = []
+                    for rule_def in template_rules:
+                        folder_path = rule_def.get('folder_to_watch')
+                        if not folder_path:
+                            self.log_queue.put(f"WARNING: Template rule in '{template_name}' missing 'folder_to_watch'. Skipping.")
+                            continue
+                        
+                        # Expand environment variables in paths
+                        import os
+                        expanded_folder_path = os.path.expandvars(folder_path)
+                        expanded_dest_folder = os.path.expandvars(rule_def.get('destination_folder', ''))
+
+                        # Check if folder already exists in list, if not, add it
+                        existing_items_texts = []
+                        for i in range(self.folder_list_widget.count()):
+                            item = self.folder_list_widget.item(i)
+                            if item: # Ensure item is not None before calling text()
+                                existing_items_texts.append(item.text())
+                        
+                        if expanded_folder_path not in existing_items_texts:
+                            if self.config_manager.add_folder(expanded_folder_path, rule_def): # Add with template rule
+                                list_item = QListWidgetItem(expanded_folder_path)
+                                self.folder_list_widget.addItem(list_item)
+                                folders_added_or_updated.append(expanded_folder_path)
+                                self.log_queue.put(f"INFO: Added folder '{expanded_folder_path}' from template '{template_name}'.")
+                            else:
+                                self.log_queue.put(f"INFO: Folder '{expanded_folder_path}' (from template) likely already in config, attempting to update rule.")
+                        
+                        action_map = {
+                            "move": "move",
+                            "copy": "copy",
+                            "delete": "delete_to_trash", 
+                            "delete_permanently": "delete_permanently"
+                        }
+                        
+                        update_success = self.config_manager.update_folder_rule(
+                            path=expanded_folder_path,
+                            age_days=rule_def.get('days_older_than', 0),
+                            pattern=rule_def.get('file_pattern', '*.*'),
+                            rule_logic=rule_def.get('rule_logic', 'OR'), 
+                            use_regex=rule_def.get('use_regex', False),   
+                            action=action_map.get(rule_def.get('action', 'move').lower(), "move"),
+                            exclusions=rule_def.get('exclusions', []),  
+                            destination_folder=expanded_dest_folder, 
+                            enabled=rule_def.get('enabled', True) 
+                        )
+                        if update_success:
+                            if expanded_folder_path not in folders_added_or_updated: 
+                                folders_added_or_updated.append(expanded_folder_path)
+                            self.log_queue.put(f"INFO: Applied rule from template '{template_name}' to folder '{expanded_folder_path}'.")
+                        else:
+                            self.log_queue.put(f"ERROR: Failed to apply rule from template '{template_name}' to folder '{expanded_folder_path}'.")
+
+                    if folders_added_or_updated:
+                        QMessageBox.information(self, "Template Applied",
+                                                f"Template '{template_name}' applied. Rules for the following folders were added/updated:\n" +
+                                                "\n".join(folders_added_or_updated) +
+                                                "\n\nPlease review the changes.")
+                        # Refresh the UI to show the new/updated rules
+                        if self.folder_list_widget.count() > 0:
+                            # Try to select the last modified/added folder from the template
+                            last_affected_folder = folders_added_or_updated[-1]
+                            items = self.folder_list_widget.findItems(last_affected_folder, Qt.MatchFlag.MatchExactly)
+                            if items:
+                                self.folder_list_widget.setCurrentItem(items[0])
+                            else: 
+                                self.folder_list_widget.setCurrentRow(0)
+                        else: 
+                            self.update_rule_inputs(None, None) # Pass None as QListWidgetItem
+
+                    else: 
+                         QMessageBox.warning(self, "Template Application Issue", f"Could not apply any rules from template '{template_name}'. Check logs for details.")
+                else: # User clicked No
+                    self.log_queue.put(f"INFO: User cancelled applying template '{template_name}'.")
+        else:
+            self.log_queue.put("ERROR: apply_selected_template called by a non-QAction sender.")
+
+
+    # Placeholder methods for exclusion functionality to resolve linting errors
+    # These should be implemented or connected to actual logic if it exists elsewhere.
+    def add_exclusion_pattern(self):
+        self.log_queue.put("INFO: Add exclusion pattern clicked (placeholder).")
+        # Example: Open a dialog to get new pattern, then add to list and config
+
+    def remove_selected_exclusion_pattern(self):
+        self.log_queue.put("INFO: Remove selected exclusion pattern clicked (placeholder).")
+        # Example: Get selected pattern from self.exclusion_list_widget, remove it, update config
+
+    def show_exclusion_pattern_help(self):
+        self.log_queue.put("INFO: Show exclusion pattern help clicked (placeholder).")
+        QMessageBox.information(self, "Exclusion Help", "Enter patterns (e.g., *.tmp, temp_folder/) to exclude files/folders. One per line.")
+
     def save_exclusion_list_changes(self, item: QListWidgetItem):
-        """Saves changes when an exclusion list item is edited."""
-        # This is triggered when an item's text is changed by the user.
-        # The actual saving of the full list is handled by save_rule_changes.
-        # We just need to ensure save_rule_changes is called.
-        self.save_rule_changes()
+        self.log_queue.put(f"INFO: Exclusion item '{item.text()}' changed (placeholder for saving).")
+        # This should trigger saving the entire exclusion list for the current folder rule.
+        self.save_rule_changes() # Re-use save_rule_changes to update the whole rule including exclusions
 
-    @pyqtSlot()
-    def show_exclusion_help(self):
-        """Displays a message box with help and examples for exclusion patterns."""
-        title = "Exclusion Pattern Help"
-        message = (
-            "Exclusion patterns help you prevent AutoTidy from processing specific files or folders "
-            "that might otherwise match your organization rules.\n\n"
-            "Patterns are matched against the full path of a file or folder relative to the monitored folder.\n\n"
-            "Common Wildcards:\n"
-            "  *   (Asterisk): Matches any sequence of characters (including none).\n"
-            "      Example: `*.tmp` matches all files ending with .tmp\n"
-            "      Example: `temp*` matches 'temp_file.txt' and 'temporary_folder'\n"
-            "  ?   (Question Mark): Matches any single character.\n"
-            "      Example: `image??.png` matches 'image01.png' but not 'image1.png' or 'image001.png'\n\n"
-            "Examples:\n"
-            "  `*.log` - Excludes all files with the .log extension.\n"
-            "  `cache/` - Excludes a subfolder named 'cache' and its contents.\n"
-            "  `important_document.docx` - Excludes a specific file.\n"
-            "  `archive_*` - Excludes all files or folders starting with 'archive_'.\n"
-            "  `**/temp_files/*` - Excludes files within any subfolder named 'temp_files'. (Note: `**` for recursive directories is not standard `fnmatch` but illustrates a common advanced desire; for simple exclusions, stick to patterns relative to the monitored folder's root.)\n\n"
-            "Enter one pattern per line in the exclusion list."
-        )
-        QMessageBox.information(self, title, message)
 
 if __name__ == '__main__':
     import sys

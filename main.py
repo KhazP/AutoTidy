@@ -2,6 +2,7 @@ import sys
 import queue
 import threading
 import os
+import argparse # Added for command line argument parsing
 from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu, QMessageBox
 from PyQt6.QtGui import QIcon, QAction # Assuming you have an icon file
 from PyQt6.QtCore import pyqtSlot
@@ -13,12 +14,52 @@ from constants import APP_NAME # Import from constants
 # Worker is implicitly used by ConfigWindow's start/stop actions
 # No direct need for UndoManager/UndoDialog imports here if ConfigWindow handles it
 
+# --- Additions for context menu argument handling ---
+def handle_context_menu_action(action, folder_path, config_manager):
+    """Handles actions triggered from the context menu."""
+    if not os.path.isdir(folder_path):
+        print(f"Error: Provided path '{folder_path}' is not a valid directory.")
+        # Optionally, show a QMessageBox to the user if GUI is available
+        # msg_box = QMessageBox()
+        # msg_box.setIcon(QMessageBox.Icon.Warning)
+        # msg_box.setText(f"Invalid folder path from context menu: {folder_path}")
+        # msg_box.setWindowTitle("AutoTidy - Context Menu Error")
+        # msg_box.exec()
+        return
+
+    current_config = config_manager.get_config()
+    folder_path = os.path.normpath(folder_path) # Normalize path
+
+    if action == "add_folder":
+        if folder_path not in current_config["folders_to_monitor"]:
+            current_config["folders_to_monitor"].append(folder_path)
+            config_manager.save_config(current_config)
+            print(f"Added '{folder_path}' to monitored folders via context menu.")
+            # TODO: Notify the user, perhaps via a tray notification if app is running
+        else:
+            print(f"'{folder_path}' is already in monitored folders.")
+
+    elif action == "exclude_folder":
+        if folder_path not in current_config["excluded_folders"]:
+            current_config["excluded_folders"].append(folder_path)
+            config_manager.save_config(current_config)
+            print(f"Added '{folder_path}' to excluded folders via context menu.")
+            # TODO: Notify the user
+        else:
+            print(f"'{folder_path}' is already in excluded folders.")
+    # Potentially restart monitoring if it was active, or notify the user to do so.
+    # This depends on how dynamic config updates are handled by the worker.
+# --- End of context menu additions ---
+
 # Determine the base path (directory of the script)
 def resource_path(relative_path):
     """ Get absolute path to resource, works for dev and for PyInstaller """
     if hasattr(sys, '_MEIPASS'):
-        return os.path.join(sys._MEIPASS, relative_path)
-    return os.path.join(os.path.abspath("."), relative_path)
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    else:
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
 
 ICON_NAME = "autotidyicon.ico"
 ICON_PATH = resource_path(ICON_NAME)  # Use resource_path for PyInstaller compatibility
@@ -140,6 +181,24 @@ class AutoTidyApp(QApplication):
 
 
 if __name__ == "__main__":
-    # Ensure APP_NAME is used for ConfigManager initialization
+    parser = argparse.ArgumentParser(description=f"{APP_NAME} - Automated File Organization Utility")
+    parser.add_argument("--add-folder", metavar="PATH", help="Add the specified folder to be monitored by AutoTidy (via context menu).", dest="add_folder_path")
+    parser.add_argument("--exclude-folder", metavar="PATH", help="Add the specified folder to be excluded by AutoTidy (via context menu).", dest="exclude_folder_path")
+    args = parser.parse_args()
+
+    # Initialize ConfigManager early to handle context menu actions even if app isn't fully running
+    # This assumes ConfigManager can be instantiated without a full QApplication running
+    temp_config_manager = ConfigManager(APP_NAME)
+
+    # Handle context menu actions before starting the full application
+    # These actions will modify the config and then exit.
+    if args.add_folder_path:
+        handle_context_menu_action("add_folder", args.add_folder_path, temp_config_manager)
+        sys.exit(0) # Exit after handling the context menu action
+    elif args.exclude_folder_path:
+        handle_context_menu_action("exclude_folder", args.exclude_folder_path, temp_config_manager)
+        sys.exit(0) # Exit after handling the context menu action
+
+    # If no context menu arguments were processed, start the GUI application
     app = AutoTidyApp(sys.argv)
     sys.exit(app.exec())
