@@ -2,8 +2,10 @@ import sys
 import queue
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QListWidget, QLineEdit,
-    QSpinBox, QLabel, QTextEdit, QFileDialog, QMessageBox, QListWidgetItem, QComboBox, QCheckBox
+    QSpinBox, QLabel, QTextEdit, QFileDialog, QMessageBox, QListWidgetItem, QComboBox, QCheckBox,
+    QApplication # Added QApplication
 )
+from PyQt6.QtGui import QKeySequence # Added for shortcuts
 from PyQt6.QtCore import QTimer, Qt, pyqtSlot
 
 from config_manager import ConfigManager
@@ -33,6 +35,7 @@ class ConfigWindow(QWidget):
         self._init_ui()
         self._load_initial_config()
         self._setup_log_timer()
+        self._setup_shortcuts() # Call new method
 
     def _init_ui(self):
         """Initialize UI elements and layout."""
@@ -40,16 +43,20 @@ class ConfigWindow(QWidget):
 
         # --- Top Controls ---
         top_controls_layout = QHBoxLayout()
-        self.add_folder_button = QPushButton("Add Folder")
-        self.remove_folder_button = QPushButton("Remove Selected")
+        self.add_folder_button = QPushButton("&Add Folder") # Added & for mnemonic
+        self.add_folder_button.setToolTip("Add a new folder to monitor (Ctrl+O)")
+        self.remove_folder_button = QPushButton("&Remove Selected") # Added &
+        self.remove_folder_button.setToolTip("Remove the selected folder from monitoring (Del)")
         top_controls_layout.addWidget(self.add_folder_button)
         top_controls_layout.addWidget(self.remove_folder_button)
         top_controls_layout.addStretch()
 
-        self.view_history_button = QPushButton("View Action History / Undo") # New Undo button
+        self.view_history_button = QPushButton("View Action &History / Undo") # Added &
+        self.view_history_button.setToolTip("Open the action history and undo window (Ctrl+H)")
         top_controls_layout.addWidget(self.view_history_button) # Add new button to layout
 
-        self.settings_button = QPushButton("Settings")
+        self.settings_button = QPushButton("&Settings") # Added &
+        self.settings_button.setToolTip("Open application settings (Ctrl+,)")
         top_controls_layout.addWidget(self.settings_button)
         main_layout.addLayout(top_controls_layout)
 
@@ -65,23 +72,27 @@ class ConfigWindow(QWidget):
         self.age_spinbox = QSpinBox()
         self.age_spinbox.setRange(0, 3650) # 0 to 10 years
         self.age_spinbox.setEnabled(False)
+        self.age_spinbox.setToolTip("Minimum age in days for a file to be considered for action.")
         rule_layout.addWidget(self.age_spinbox)
 
         rule_layout.addWidget(QLabel("Filename Pattern:"))
         self.pattern_lineedit = QLineEdit()
         self.pattern_lineedit.setPlaceholderText("*.*")
         self.pattern_lineedit.setEnabled(False)
+        self.pattern_lineedit.setToolTip("Filename pattern to match (e.g., *.tmp, document_*.docx). Wildcards supported.")
         rule_layout.addWidget(self.pattern_lineedit)
 
         # Add Use Regex Checkbox
-        self.useRegexCheckbox = QCheckBox("Use Regular Expression")
+        self.useRegexCheckbox = QCheckBox("Use Regular E&xpression") # Added &
         self.useRegexCheckbox.setEnabled(False)
+        self.useRegexCheckbox.setToolTip("Check to use full regular expressions for pattern matching.")
         rule_layout.addWidget(self.useRegexCheckbox)
 
         rule_layout.addWidget(QLabel("Logic:"))
         self.rule_logic_combo = QComboBox()
         self.rule_logic_combo.addItems(["OR", "AND"])
         self.rule_logic_combo.setEnabled(False)
+        self.rule_logic_combo.setToolTip("Logic to combine age and pattern rules (OR: either matches, AND: both must match).")
         rule_layout.addWidget(self.rule_logic_combo)
 
         # Action ComboBox (Move/Copy/Delete)
@@ -89,9 +100,37 @@ class ConfigWindow(QWidget):
         self.actionComboBox = QComboBox()
         self.actionComboBox.addItems(["Move", "Copy", "Delete to Trash", "Delete Permanently"])
         self.actionComboBox.setEnabled(False)
+        self.actionComboBox.setToolTip("Action to perform on matching files.")
         rule_layout.addWidget(self.actionComboBox)
 
         main_layout.addLayout(rule_layout)
+
+        # --- Exclusion Rules Editor ---
+        exclusion_layout = QHBoxLayout()
+        exclusion_editor_layout = QVBoxLayout()
+        exclusion_editor_layout.addWidget(QLabel("Exclusion Patterns for selected folder (one per line):"))
+        self.exclusion_list_widget = QListWidget()
+        self.exclusion_list_widget.setToolTip("Files/folders matching these patterns will be ignored. Wildcards supported.")
+        self.exclusion_list_widget.setEnabled(False)
+        exclusion_editor_layout.addWidget(self.exclusion_list_widget)
+
+        exclusion_buttons_layout = QHBoxLayout()
+        self.add_exclusion_button = QPushButton("Add E&xclusion")
+        self.add_exclusion_button.setToolTip("Add a new exclusion pattern.")
+        self.add_exclusion_button.setEnabled(False)
+        self.remove_exclusion_button = QPushButton("Remove Selected E&xclusion")
+        self.remove_exclusion_button.setToolTip("Remove the selected exclusion pattern.")
+        self.remove_exclusion_button.setEnabled(False)
+        self.exclusion_help_button = QPushButton("Exclusion &Help") # New Help Button
+        self.exclusion_help_button.setToolTip("Show help and examples for exclusion patterns.")
+        # self.exclusion_help_button.setEnabled(False) # Enable it when a folder is selected, like other exclusion buttons
+        exclusion_buttons_layout.addWidget(self.add_exclusion_button)
+        exclusion_buttons_layout.addWidget(self.remove_exclusion_button)
+        exclusion_buttons_layout.addWidget(self.exclusion_help_button) # Add to layout
+        exclusion_editor_layout.addLayout(exclusion_buttons_layout)
+
+        exclusion_layout.addLayout(exclusion_editor_layout)
+        main_layout.addLayout(exclusion_layout)
 
         # --- Status and Logs ---
         status_layout = QHBoxLayout()
@@ -99,8 +138,10 @@ class ConfigWindow(QWidget):
         self.status_label = QLabel("Stopped")
         status_layout.addWidget(self.status_label)
         status_layout.addStretch()
-        self.start_button = QPushButton("Start Monitoring") # Text will be updated by _update_ui_for_status_and_mode
-        self.stop_button = QPushButton("Stop Monitoring")
+        self.start_button = QPushButton("&Start Monitoring") # Text will be updated, added &
+        self.start_button.setToolTip("Start the monitoring or dry run process (Ctrl+S)")
+        self.stop_button = QPushButton("S&top Monitoring") # Added &
+        self.stop_button.setToolTip("Stop the currently running process (Ctrl+T)")
         self.stop_button.setEnabled(False)
         status_layout.addWidget(self.start_button)
         status_layout.addWidget(self.stop_button)
@@ -124,8 +165,53 @@ class ConfigWindow(QWidget):
         self.stop_button.clicked.connect(self.stop_monitoring)
         self.settings_button.clicked.connect(self.open_settings_dialog)
         self.view_history_button.clicked.connect(self.open_undo_dialog) # Connect new Undo button
+        self.add_exclusion_button.clicked.connect(self.add_exclusion)
+        self.remove_exclusion_button.clicked.connect(self.remove_exclusion)
+        self.exclusion_help_button.clicked.connect(self.show_exclusion_help) # Connect help button
+        self.exclusion_list_widget.itemChanged.connect(self.save_exclusion_list_changes) # Save when an item is edited
 
         self._update_ui_for_status_and_mode() # Initial UI update
+        self._set_initial_focus() # Set initial focus
+
+    def _set_initial_focus(self):
+        """Sets the initial focus to a sensible widget."""
+        self.add_folder_button.setFocus()
+
+    def _setup_shortcuts(self):
+        """Setup keyboard shortcuts for common actions."""
+        self.add_folder_button.setShortcut(QKeySequence("Ctrl+O"))
+        # Remove folder shortcut handled by keyPressEvent on list widget
+        self.view_history_button.setShortcut(QKeySequence("Ctrl+H"))
+        self.settings_button.setShortcut(QKeySequence("Ctrl+,")) # Comma for settings often
+        self.start_button.setShortcut(QKeySequence("Ctrl+S"))
+        self.stop_button.setShortcut(QKeySequence("Ctrl+T"))
+
+        # Shortcut for closing/hiding the window
+        close_shortcut = QKeySequence(Qt.Key.Key_Escape)
+        self.addAction(self.create_action("Hide Window", self.close, close_shortcut))
+
+    def create_action(self, text, slot, shortcut=None):
+        """Helper to create a QAction for shortcuts not tied to a button."""
+        from PyQt6.QtGui import QAction # Local import
+        action = QAction(text, self)
+        action.triggered.connect(slot)
+        if shortcut:
+            action.setShortcut(shortcut)
+            action.setShortcutContext(Qt.ShortcutContext.WindowShortcut) # Ensure it works window-wide
+        return action
+
+    def keyPressEvent(self, event):
+        """Handle key presses for actions like deleting from list."""
+        if event.key() == Qt.Key.Key_Delete and self.folder_list_widget.hasFocus() and self.folder_list_widget.currentItem():
+            self.remove_folder()
+        elif event.key() == Qt.Key.Key_Escape:
+            self.close() # Hide on Escape
+        else:
+            super().keyPressEvent(event)
+            
+    # Ensure the window can be closed by the Escape key even if a child widget has focus
+    # This is often handled by QDialogs automatically, but for QWidget, we might need this.
+    # The addAction with WindowShortcut context for Escape should generally cover this.
 
     def _load_initial_config(self):
         """Load existing configuration into the UI."""
@@ -186,6 +272,11 @@ class ConfigWindow(QWidget):
                          self.useRegexCheckbox.setChecked(False) # Uncheck regex checkbox
                          self.rule_logic_combo.setCurrentIndex(0) # Reset logic combo
                          self.actionComboBox.setCurrentIndex(0) # Reset action combo box
+                         self.exclusion_list_widget.clear() # Clear exclusions
+                         self.exclusion_list_widget.setEnabled(False)
+                         self.add_exclusion_button.setEnabled(False)
+                         self.remove_exclusion_button.setEnabled(False)
+                         self.exclusion_help_button.setEnabled(False) # Disable help button
 
                 else:
                      QMessageBox.warning(self, "Error", f"Could not remove folder '{path}' from configuration.")
@@ -205,6 +296,7 @@ class ConfigWindow(QWidget):
                 self.rule_logic_combo.blockSignals(True)
                 self.useRegexCheckbox.blockSignals(True)
                 self.actionComboBox.blockSignals(True) # Block actionComboBox signals
+                self.exclusion_list_widget.blockSignals(True) # Block exclusion list signals
 
                 self.age_spinbox.setValue(rule.get('age_days', 0))
                 self.pattern_lineedit.setText(rule.get('pattern', '*.*'))
@@ -220,17 +312,30 @@ class ConfigWindow(QWidget):
                 }
                 self.actionComboBox.setCurrentText(action_display_map.get(action_value, "Move"))
 
+                self.exclusion_list_widget.clear()
+                exclusions = rule.get('exclusions', [])
+                for exclusion_pattern in exclusions:
+                    item = QListWidgetItem(exclusion_pattern)
+                    item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable) # Make item editable
+                    self.exclusion_list_widget.addItem(item)
+
                 self.age_spinbox.setEnabled(True)
                 self.pattern_lineedit.setEnabled(True)
                 self.rule_logic_combo.setEnabled(True)
                 self.useRegexCheckbox.setEnabled(True) # Enable checkbox
                 self.actionComboBox.setEnabled(True) # Enable actionComboBox
+                self.exclusion_list_widget.setEnabled(True)
+                self.add_exclusion_button.setEnabled(True)
+                self.remove_exclusion_button.setEnabled(True)
+                self.exclusion_help_button.setEnabled(True) # Enable help button
+
 
                 self.age_spinbox.blockSignals(False)
                 self.pattern_lineedit.blockSignals(False)
                 self.rule_logic_combo.blockSignals(False)
                 self.useRegexCheckbox.blockSignals(False)
                 self.actionComboBox.blockSignals(False) # Unblock actionComboBox signals
+                self.exclusion_list_widget.blockSignals(False) # Unblock exclusion list signals
             else:
                 # Should not happen if list is synced with config, but handle defensively
                 self.age_spinbox.setEnabled(False)
@@ -243,8 +348,13 @@ class ConfigWindow(QWidget):
                 self.rule_logic_combo.setCurrentIndex(0)
                 self.useRegexCheckbox.setChecked(False) # Uncheck checkbox
                 self.actionComboBox.setCurrentIndex(0) # Reset actionComboBox
+                self.exclusion_list_widget.clear() # Clear exclusions
+                self.exclusion_list_widget.setEnabled(False)
+                self.add_exclusion_button.setEnabled(False)
+                self.remove_exclusion_button.setEnabled(False)
+                self.exclusion_help_button.setEnabled(False) # Disable help button
         else:
-            # No item selected
+            # No item selected, disable all rule inputs
             self.age_spinbox.setEnabled(False)
             self.pattern_lineedit.setEnabled(False)
             self.rule_logic_combo.setEnabled(False)
@@ -253,8 +363,14 @@ class ConfigWindow(QWidget):
             self.age_spinbox.setValue(0)
             self.pattern_lineedit.clear()
             self.rule_logic_combo.setCurrentIndex(0)
-            self.useRegexCheckbox.setChecked(False) # Uncheck checkbox
+            self.useRegexCheckbox.setChecked(False)
             self.actionComboBox.setCurrentIndex(0) # Reset actionComboBox
+            self.exclusion_list_widget.clear() # Clear exclusions
+            self.exclusion_list_widget.setEnabled(False)
+            self.add_exclusion_button.setEnabled(False)
+            self.remove_exclusion_button.setEnabled(False)
+            self.exclusion_help_button.setEnabled(False) # Disable help button
+
 
     @pyqtSlot()
     def save_rule_changes(self):
@@ -295,11 +411,25 @@ class ConfigWindow(QWidget):
                                         "Ensure this rule is configured carefully.",
                                         QMessageBox.StandardButton.Ok)
 
-            if self.config_manager.update_folder_rule(path, age, pattern, rule_logic, use_regex, action_value): # Pass action_value
-                 self.log_queue.put(f"INFO: Updated rules for {path} (Logic: {rule_logic}, Regex: {use_regex}, Action: {action_value})")
+            exclusions = []
+            for i in range(self.exclusion_list_widget.count()):
+                item = self.exclusion_list_widget.item(i)
+                if item: # Add check for item existence
+                    exclusions.append(item.text())
+
+            if self.config_manager.update_folder_rule(
+                path,
+                age,
+                pattern,
+                rule_logic,
+                use_regex,
+                action_value,
+                exclusions # Pass exclusions
+            ):
+                self.log_queue.put(f"INFO: Updated rules for {path}")
             else:
-                 # Should not happen if item exists
-                 self.log_queue.put(f"ERROR: Failed to update rules for {path} (not found in config?)")
+                # Should not happen if item exists
+                self.log_queue.put(f"ERROR: Failed to update rules for {path} (not found in config?)")
 
     @pyqtSlot()
     def open_settings_dialog(self):
@@ -314,31 +444,36 @@ class ConfigWindow(QWidget):
         dialog.exec()
 
     def _update_ui_for_status_and_mode(self):
-        """Updates button texts and status label based on worker status and dry run mode."""
-        dry_run_active = self.config_manager.get_dry_run_mode()
-        is_running = self.worker_status == "Running"
+        """Update UI elements based on worker status and dry run mode."""
+        is_running = self.worker_status == "Running" or self.worker_status == "Dry Run Active"
+        is_dry_run_mode = self.config_manager.get_setting('dry_run_mode', False)
 
-        if dry_run_active:
-            self.start_button.setText("Start Dry Run")
-            if is_running:
-                self.status_label.setText("Dry Run Active")
-                self.start_button.setEnabled(False)
-                self.stop_button.setEnabled(True)
-            else: # Stopped or Error
-                # Preserve error message if worker_status indicates an error
-                self.status_label.setText(self.worker_status if "Error" in self.worker_status else "Idle (Dry Run Mode)")
-                self.start_button.setEnabled(True)
-                self.stop_button.setEnabled(False)
-        else:
-            self.start_button.setText("Start Monitoring")
-            if is_running:
-                self.status_label.setText("Running") # Or self.worker_status if it can be "Running (Dry Run)"
-                self.start_button.setEnabled(False)
-                self.stop_button.setEnabled(True)
-            else: # Stopped or Error
-                self.status_label.setText(self.worker_status)
-                self.start_button.setEnabled(True)
-                self.stop_button.setEnabled(False)
+        self.start_button.setText("&Start Dry Run" if is_dry_run_mode and not is_running else "&Start Monitoring")
+        self.start_button.setToolTip(
+            "Preview actions without making changes (Dry Run)" if is_dry_run_mode and not is_running
+            else "Start the monitoring process (Ctrl+S)"
+        )
+        self.start_button.setEnabled(not is_running)
+        self.stop_button.setEnabled(is_running)
+
+        # Disable folder/rule editing when worker is active
+        self.add_folder_button.setEnabled(not is_running)
+        self.remove_folder_button.setEnabled(not is_running)
+        self.settings_button.setEnabled(not is_running) # Also disable settings when running
+
+        # Enable/disable rule inputs based on selection and running state
+        current_item = self.folder_list_widget.currentItem()
+        can_edit_rules = current_item is not None and not is_running
+
+        self.age_spinbox.setEnabled(can_edit_rules)
+        self.pattern_lineedit.setEnabled(can_edit_rules)
+        self.rule_logic_combo.setEnabled(can_edit_rules)
+        self.useRegexCheckbox.setEnabled(can_edit_rules)
+        self.actionComboBox.setEnabled(can_edit_rules)
+        self.exclusion_list_widget.setEnabled(can_edit_rules)
+        self.add_exclusion_button.setEnabled(can_edit_rules)
+        self.remove_exclusion_button.setEnabled(can_edit_rules)
+        self.exclusion_help_button.setEnabled(can_edit_rules) # Enable/disable help button
 
 
     @pyqtSlot()
@@ -405,8 +540,24 @@ class ConfigWindow(QWidget):
                     self.log_view.append(f'<font color="red">{message}</font>')
                 elif message.startswith("WARNING:"):
                      self.log_view.append(f'<font color="orange">{message}</font>')
-                else: # INFO or other
+                elif isinstance(message, dict) and message.get("type") == "SHOW_NOTIFICATION":
+                    if self.config_manager.get_setting("show_notifications", True):
+                        app_instance = QApplication.instance()
+                        # Check if it's an instance of our AutoTidyApp (which has the method)
+                        if app_instance and hasattr(app_instance, 'show_system_notification') and callable(getattr(app_instance, 'show_system_notification')):
+                            title = message.get("title", "AutoTidy")
+                            body = message.get("message", "")
+                            # Explicitly call, relying on the hasattr check
+                            getattr(app_instance, 'show_system_notification')(title, body)
+                        else:
+                            print(f"DEBUG: AutoTidyApp instance not found or no show_system_notification method for: {message}", file=sys.stderr)
+                    else:
+                        print(f"DEBUG: Notifications disabled. Suppressed: {message.get('title')}", file=sys.stderr)
+                elif isinstance(message, str): # Ensure only strings are appended directly
                     self.log_view.append(message)
+                else:
+                    # Handle or log unexpected message types if necessary
+                    print(f"DEBUG: Received unexpected message type in log queue: {type(message)}", file=sys.stderr)
 
                 # Auto-scroll to bottom
                 scroll_bar = self.log_view.verticalScrollBar()
@@ -444,3 +595,79 @@ class ConfigWindow(QWidget):
         self.show()
         self.activateWindow()
         self.raise_()
+
+    # --- New methods for managing exclusions ---
+    @pyqtSlot()
+    def add_exclusion(self):
+        """Adds a new empty exclusion pattern to the list for the current folder."""
+        current_folder_item = self.folder_list_widget.currentItem()
+        if not current_folder_item:
+            QMessageBox.information(self, "No Folder Selected", "Please select a folder first.")
+            return
+
+        new_exclusion_item = QListWidgetItem("new_pattern*") # Default placeholder
+        new_exclusion_item.setFlags(new_exclusion_item.flags() | Qt.ItemFlag.ItemIsEditable)
+        self.exclusion_list_widget.addItem(new_exclusion_item)
+        self.exclusion_list_widget.setCurrentItem(new_exclusion_item)
+        self.exclusion_list_widget.editItem(new_exclusion_item) # Start editing immediately
+        self.save_rule_changes() # Save changes as adding an item modifies the rule
+
+    @pyqtSlot()
+    def remove_exclusion(self):
+        """Removes the selected exclusion pattern from the list."""
+        current_exclusion_item = self.exclusion_list_widget.currentItem()
+        if current_exclusion_item:
+            row = self.exclusion_list_widget.row(current_exclusion_item)
+            self.exclusion_list_widget.takeItem(row)
+            self.save_rule_changes() # Save changes as removing an item modifies the rule
+        else:
+            QMessageBox.information(self, "No Selection", "Please select an exclusion pattern to remove.")
+
+    @pyqtSlot(QListWidgetItem)
+    def save_exclusion_list_changes(self, item: QListWidgetItem):
+        """Saves changes when an exclusion list item is edited."""
+        # This is triggered when an item's text is changed by the user.
+        # The actual saving of the full list is handled by save_rule_changes.
+        # We just need to ensure save_rule_changes is called.
+        self.save_rule_changes()
+
+    @pyqtSlot()
+    def show_exclusion_help(self):
+        """Displays a message box with help and examples for exclusion patterns."""
+        title = "Exclusion Pattern Help"
+        message = (
+            "Exclusion patterns help you prevent AutoTidy from processing specific files or folders "
+            "that might otherwise match your organization rules.\n\n"
+            "Patterns are matched against the full path of a file or folder relative to the monitored folder.\n\n"
+            "Common Wildcards:\n"
+            "  *   (Asterisk): Matches any sequence of characters (including none).\n"
+            "      Example: `*.tmp` matches all files ending with .tmp\n"
+            "      Example: `temp*` matches 'temp_file.txt' and 'temporary_folder'\n"
+            "  ?   (Question Mark): Matches any single character.\n"
+            "      Example: `image??.png` matches 'image01.png' but not 'image1.png' or 'image001.png'\n\n"
+            "Examples:\n"
+            "  `*.log` - Excludes all files with the .log extension.\n"
+            "  `cache/` - Excludes a subfolder named 'cache' and its contents.\n"
+            "  `important_document.docx` - Excludes a specific file.\n"
+            "  `archive_*` - Excludes all files or folders starting with 'archive_'.\n"
+            "  `**/temp_files/*` - Excludes files within any subfolder named 'temp_files'. (Note: `**` for recursive directories is not standard `fnmatch` but illustrates a common advanced desire; for simple exclusions, stick to patterns relative to the monitored folder's root.)\n\n"
+            "Enter one pattern per line in the exclusion list."
+        )
+        QMessageBox.information(self, title, message)
+
+if __name__ == '__main__':
+    import sys
+    from PyQt6.QtWidgets import QApplication
+    from config_manager import ConfigManager
+    from worker import MonitoringWorker
+    from ui_settings_dialog import SettingsDialog
+    from undo_manager import UndoManager
+    from ui_undo_dialog import UndoDialog
+
+    app = QApplication(sys.argv)
+    # Needs app_name for ConfigManager
+    config_manager = ConfigManager("AutoTidyTest") # Provide a name for testing
+    log_queue = queue.Queue()
+    main_win = ConfigWindow(config_manager, log_queue)
+    main_win.show()
+    sys.exit(app.exec())

@@ -5,6 +5,7 @@ from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QTableWidget, QTableWidgetItem, QPushButton,
     QAbstractItemView, QHBoxLayout, QHeaderView, QMessageBox
 )
+from PyQt6.QtGui import QKeySequence # Added
 from PyQt6.QtCore import Qt
 import constants # Assuming constants.py contains ACTION_MOVED and STATUS_SUCCESS
 
@@ -37,31 +38,35 @@ class HistoryViewerDialog(QDialog):
         self.historyTable.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.historyTable.setSortingEnabled(True)
         # Stretch last column (Details)
-        self.historyTable.horizontalHeader().setSectionResizeMode(self.column_headers.index("Details"), QHeaderView.ResizeMode.Stretch)
-        # Allow manual resize for other columns initially, then resize to contents
-        for i in range(len(self.column_headers)):
-            if i != self.column_headers.index("Details"):
-                 self.historyTable.horizontalHeader().setSectionResizeMode(i, QHeaderView.ResizeMode.Interactive)
-
+        header = self.historyTable.horizontalHeader()
+        if header:
+            header.setSectionResizeMode(self.column_headers.index("Details"), QHeaderView.ResizeMode.Stretch)
+            # Allow manual resize for other columns initially, then resize to contents
+            for i in range(len(self.column_headers)):
+                if i != self.column_headers.index("Details"):
+                    header.setSectionResizeMode(i, QHeaderView.ResizeMode.Interactive)
 
         layout.addWidget(self.historyTable)
 
         # Buttons Layout
         buttons_layout = QHBoxLayout()
 
-        self.undoButton = QPushButton("Undo Selected Action")
+        self.undoButton = QPushButton("&Undo Selected Action") # Added &
+        self.undoButton.setToolTip("Undo the selected file operation (Ctrl+Z if focus is on table/button)")
         self.undoButton.clicked.connect(self.handle_undo_action)
         buttons_layout.addWidget(self.undoButton)
 
         buttons_layout.addStretch(1) # Add stretch before refresh to push undo to left
 
-        self.refreshButton = QPushButton("Refresh")
+        self.refreshButton = QPushButton("&Refresh") # Added &
+        self.refreshButton.setToolTip("Reload the action history (F5)")
         self.refreshButton.clicked.connect(self.load_history)
         buttons_layout.addWidget(self.refreshButton)
 
         buttons_layout.addStretch(1) # Add stretch between refresh and close
 
-        self.closeButton = QPushButton("Close")
+        self.closeButton = QPushButton("&Close") # Added &
+        self.closeButton.setToolTip("Close this window (Esc)")
         self.closeButton.clicked.connect(self.accept)
         buttons_layout.addWidget(self.closeButton)
 
@@ -71,9 +76,40 @@ class HistoryViewerDialog(QDialog):
 
         self.load_history()
         self.update_undo_button_state() # Initial state
+        self._setup_shortcuts() # Call new method
+        self.historyTable.setFocus() # Set initial focus
+
+    def _setup_shortcuts(self):
+        """Setup keyboard shortcuts."""
+        self.refreshButton.setShortcut(QKeySequence(Qt.Key.Key_F5))
+        # Undo shortcut can be tricky if it needs context (which item is selected)
+        # A common pattern is Ctrl+Z. We can add it to the button.
+        # For it to work globally in the dialog when the table has focus, 
+        # we might need to catch it in keyPressEvent of the dialog or table.
+        self.undoButton.setShortcut(QKeySequence("Ctrl+Z")) 
+        # Close on Escape is usually default for QDialog.accepted/rejected
+        # self.closeButton.setShortcut(QKeySequence(Qt.Key.Key_Escape)) # QDialog handles Esc for reject/close
+
+    def keyPressEvent(self, event):
+        """Handle key presses for actions like Escape."""
+        if event.key() == Qt.Key.Key_Escape:
+            self.accept() # Close on Escape
+        elif event.key() == Qt.Key.Key_F5:
+            self.load_history() # Refresh on F5
+        # Ctrl+Z for undo if table has focus and an item is undoable
+        elif event.matches(QKeySequence.StandardKey.Undo): # Checks for Ctrl+Z or platform equivalent
+            if self.undoButton.isEnabled():
+                self.handle_undo_action()
+        else:
+            super().keyPressEvent(event)
 
     def handle_undo_action(self):
-        selected_rows = self.historyTable.selectionModel().selectedRows()
+        selection_model = self.historyTable.selectionModel()
+        if not selection_model:
+            QMessageBox.warning(self, "Undo Action", "Cannot get selection model.")
+            return
+
+        selected_rows = selection_model.selectedRows()
         if not selected_rows or len(selected_rows) != 1:
             # This case should ideally be prevented by the button's enabled state,
             # but as a safeguard:
@@ -155,7 +191,13 @@ class HistoryViewerDialog(QDialog):
 
     def update_undo_button_state(self):
         selected_items = self.historyTable.selectedItems()
-        if not selected_items or len(self.historyTable.selectionModel().selectedRows()) != 1:
+        selection_model = self.historyTable.selectionModel()
+
+        if not selection_model:
+            self.undoButton.setEnabled(False)
+            return
+
+        if not selected_items or len(selection_model.selectedRows()) != 1:
             self.undoButton.setEnabled(False)
             return
 

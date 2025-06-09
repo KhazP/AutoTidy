@@ -2,7 +2,8 @@ from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QCheckBox, QPushButton, QDialogButtonBox,
     QWidget, QMessageBox, QLabel, QSpinBox, QLineEdit, QComboBox # Added QComboBox
 )
-from PyQt6.QtCore import pyqtSlot
+from PyQt6.QtGui import QKeySequence # Added for shortcuts
+from PyQt6.QtCore import pyqtSlot, Qt # Added Qt
 
 from config_manager import ConfigManager
 from startup_manager import set_autostart
@@ -19,25 +20,36 @@ class SettingsDialog(QDialog):
         self.initial_archive_template = self.config_manager.get_archive_path_template()
         self.initial_schedule_config = self.config_manager.get_schedule_config()
         self.initial_dry_run_mode = self.config_manager.get_dry_run_mode()
+        self.initial_show_notifications = self.config_manager.get_setting("show_notifications", True) # Load initial value
 
         self.setWindowTitle("AutoTidy Settings")
         self.setModal(True) # Block interaction with the main window
 
         self._init_ui()
+        self._setup_shortcuts() # Call new method
 
     def _init_ui(self):
         """Initialize UI elements and layout."""
         layout = QVBoxLayout(self)
 
         # --- Autostart Checkbox ---
-        self.autostart_checkbox = QCheckBox("Start AutoTidy automatically on system login")
+        self.autostart_checkbox = QCheckBox("Start AutoTidy automatically on system &login") # Added &
         self.autostart_checkbox.setChecked(self.initial_start_on_login)
+        self.autostart_checkbox.setToolTip("If checked, AutoTidy will start when you log into your computer.")
         layout.addWidget(self.autostart_checkbox)
 
         # --- Dry Run Mode Checkbox ---
-        self.dryRunModeCheckbox = QCheckBox("Enable Dry Run Mode (Simulate actions, no files will be changed)")
+        self.dryRunModeCheckbox = QCheckBox("Enable &Dry Run Mode (Simulate actions, no files will be changed)") # Added &
         self.dryRunModeCheckbox.setChecked(self.initial_dry_run_mode)
+        self.dryRunModeCheckbox.setToolTip("If checked, AutoTidy will log actions it would take but won't actually move/copy/delete files.")
         layout.addWidget(self.dryRunModeCheckbox)
+
+        # --- Show Notifications Checkbox ---
+        self.showNotificationsCheckbox = QCheckBox("Show desktop &notifications for completed scans")
+        self.showNotificationsCheckbox.setChecked(self.initial_show_notifications)
+        self.showNotificationsCheckbox.setToolTip("If checked, a desktop notification will be shown when a scan cycle completes and files are processed.")
+        layout.addWidget(self.showNotificationsCheckbox)
+
         # ----------------------------
 
         # --- Check Interval SpinBox (Old, to be replaced or removed if schedule_interval_minutes is used) ---
@@ -71,6 +83,7 @@ class SettingsDialog(QDialog):
         self.intervalMinutesSpinBox.setRange(1, 10080) # 1 min to 1 week (7 * 24 * 60)
         self.intervalMinutesSpinBox.setSuffix(" minutes")
         self.intervalMinutesSpinBox.setValue(self.initial_schedule_config.get('interval_minutes', 60))
+        self.intervalMinutesSpinBox.setToolTip("How often AutoTidy should check folders for files to organize.")
         interval_minutes_layout.addWidget(self.intervalMinutesLabel)
         interval_minutes_layout.addWidget(self.intervalMinutesSpinBox)
         layout.addLayout(interval_minutes_layout)
@@ -81,6 +94,7 @@ class SettingsDialog(QDialog):
         layout.addWidget(archive_template_label)
         self.archivePathTemplateInput = QLineEdit()
         self.archivePathTemplateInput.setText(self.initial_archive_template)
+        self.archivePathTemplateInput.setToolTip("Define the subfolder structure for archived files. Use placeholders like {YYYY}-{MM}-{DD}.")
         layout.addWidget(self.archivePathTemplateInput)
         archive_template_desc_label = QLabel(
             "Placeholders: {YYYY}, {MM}, {DD}, {FILENAME}, {EXT}, {ORIGINAL_FOLDER_NAME}"
@@ -99,9 +113,40 @@ class SettingsDialog(QDialog):
 
         # --- Dialog Buttons (OK/Cancel) ---
         button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        # Add tooltips to OK and Cancel buttons
+        ok_button = button_box.button(QDialogButtonBox.StandardButton.Ok)
+        if ok_button:
+            ok_button.setText("&OK") # Added &
+            ok_button.setToolTip("Save settings and close (Enter)")
+
+        cancel_button = button_box.button(QDialogButtonBox.StandardButton.Cancel)
+        if cancel_button:
+            cancel_button.setText("&Cancel") # Added &
+            cancel_button.setToolTip("Discard changes and close (Esc)")
+
         button_box.accepted.connect(self.accept) # Connect OK to accept()
         button_box.rejected.connect(self.reject) # Connect Cancel to reject()
         layout.addWidget(button_box)
+
+        self.autostart_checkbox.setFocus() # Set initial focus
+
+    def _setup_shortcuts(self):
+        """Setup keyboard shortcuts for common actions."""
+        # OK and Cancel are often handled by QDialogButtonBox defaults (Enter/Esc)
+        # but we can add explicit shortcuts if needed or for clarity.
+        # self.addAction(self.create_action("Accept Settings", self.accept, QKeySequence(Qt.Key.Key_Return)))
+        # self.addAction(self.create_action("Reject Settings", self.reject, QKeySequence(Qt.Key.Key_Escape)))
+        # QDialog typically handles Enter for default button and Esc for reject.
+        pass # Relying on QDialogButtonBox and QDialog default handling for Enter/Esc
+
+    # def create_action(self, text, slot, shortcut=None): # Helper for explicit actions if needed
+    #     from PyQt6.QtGui import QAction
+    #     action = QAction(text, self)
+    #     action.triggered.connect(slot)
+    #     if shortcut:
+    #         action.setShortcut(shortcut)
+    #         action.setShortcutContext(Qt.ShortcutContext.WindowShortcut)
+    #     return action
 
     @pyqtSlot()
     def accept(self):
@@ -117,6 +162,9 @@ class SettingsDialog(QDialog):
 
         # Dry Run Mode
         new_dry_run_mode = self.dryRunModeCheckbox.isChecked()
+
+        # Show Notifications
+        new_show_notifications = self.showNotificationsCheckbox.isChecked()
 
         # Basic validation for archive template (ensure not empty, else ConfigManager defaults)
         if not new_archive_template:
@@ -165,6 +213,12 @@ class SettingsDialog(QDialog):
         if new_dry_run_mode != self.initial_dry_run_mode:
             self.config_manager.set_dry_run_mode(new_dry_run_mode)
             self.initial_dry_run_mode = new_dry_run_mode
+            settings_changed = True
+
+        # Check if show_notifications changed
+        if new_show_notifications != self.initial_show_notifications:
+            self.config_manager.set_setting("show_notifications", new_show_notifications)
+            self.initial_show_notifications = new_show_notifications
             settings_changed = True
 
         # Save config if any setting changed

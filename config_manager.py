@@ -73,7 +73,7 @@ class ConfigManager:
                         if 'use_regex' not in folder_item:  # Add default for use_regex
                             folder_item['use_regex'] = False
                         folder_item.setdefault('action', 'move') # Add default for action
-
+                        folder_item.setdefault('exclusions', []) # Add default for exclusions
                     return config_data
                 # Handle migration from old list format
                 elif isinstance(config_data, list):
@@ -86,6 +86,7 @@ class ConfigManager:
                              item.setdefault('rule_logic', 'OR') # Ensure rule_logic default during migration
                              item.setdefault('use_regex', False) # Ensure use_regex default during migration
                              item.setdefault('action', 'move')   # Ensure action default during migration
+                             item.setdefault('exclusions', [])   # Ensure exclusions default during migration
                              valid_folders.append(item)
                          else:
                              print(f"Warning: Skipping invalid folder item during migration: {item}", file=sys.stderr)
@@ -134,7 +135,8 @@ class ConfigManager:
                 'pattern': pattern,
                 'rule_logic': 'OR',
                 'use_regex': False, # Add default use_regex field
-                'action': 'move'   # Add default action field
+                'action': 'move',   # Add default action field
+                'exclusions': []    # Add default exclusions field
             })
             self.save_config()
             return True
@@ -150,7 +152,7 @@ class ConfigManager:
             return True
         return False # Path not found
 
-    def update_folder_rule(self, path: str, age_days: int, pattern: str, rule_logic: str, use_regex: bool, action: str) -> bool:
+    def update_folder_rule(self, path: str, age_days: int, pattern: str, rule_logic: str, use_regex: bool, action: str, exclusions: list[str]) -> bool:
         """Updates the rules for a specific folder path."""
         folders = self.config.setdefault('folders', [])
         for item in folders:
@@ -160,6 +162,7 @@ class ConfigManager:
                 item['rule_logic'] = rule_logic
                 item['use_regex'] = use_regex
                 item['action'] = action # Save the new action field
+                item['exclusions'] = exclusions # Save the new exclusions field
                 self.save_config()
                 return True
         return False # Path not found

@@ -35,6 +35,7 @@ class MonitoringWorker(threading.Thread):
         while not self._stop_event.is_set():
             # Get the list of folders specifically
             folders_to_monitor = self.config_manager.get_monitored_folders()
+            total_files_processed_in_cycle = 0 # Initialize for the cycle
 
             if not folders_to_monitor:
                 self.log_queue.put("INFO: No folders configured for monitoring.")
@@ -71,9 +72,8 @@ class MonitoringWorker(threading.Thread):
                         "delete_permanently": "Deleting Permanently"
                     }
                     action_desc = action_desc_map.get(action_to_perform, f"Unknown Action ({action_to_perform})")
-                    # Add scan_log_prefix to individual folder scan message
                     self.log_queue.put(f"INFO: {scan_log_prefix}Scanning {monitored_path} (Age > {age_days} days, {scan_mode}: '{pattern}', Action: {action_desc})")
-                    files_processed_count = 0
+                    files_processed_this_folder = 0 # Initialize for this folder
                     try:
                         for item in monitored_path.iterdir():
                              if self._stop_event.is_set():
@@ -95,17 +95,20 @@ class MonitoringWorker(threading.Thread):
                                     )
                                     self.log_queue.put(f"{'INFO' if success else 'ERROR'}: {message}")
                                     if success:
-                                        files_processed_count += 1
+                                        files_processed_this_folder += 1
 
                     except PermissionError:
                          self.log_queue.put(f"ERROR: Permission denied accessing folder: {monitored_path}")
                     except Exception as e:
                          self.log_queue.put(f"ERROR: Unexpected error scanning {monitored_path}: {e}")
 
-                    if files_processed_count > 0:
-                         self.log_queue.put(f"INFO: Finished scan for {monitored_path}, processed {files_processed_count} file(s).")
+                    if files_processed_this_folder > 0:
+                         self.log_queue.put(f"INFO: Finished scan for {monitored_path}, processed {files_processed_this_folder} file(s).")
+                    total_files_processed_in_cycle += files_processed_this_folder # Accumulate for the cycle
 
-
+                if total_files_processed_in_cycle > 0:
+                    self.log_queue.put({"type": "SHOW_NOTIFICATION", "title": "AutoTidy Scan Complete", "message": f"{total_files_processed_in_cycle} file(s) processed successfully."})
+                
                 self.log_queue.put("INFO: Scan cycle complete.")
 
             # Fetch schedule config for the sleep interval

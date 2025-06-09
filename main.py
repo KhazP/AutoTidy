@@ -85,9 +85,20 @@ class AutoTidyApp(QApplication):
         self.tray_icon.activated.connect(self.on_tray_activated)
 
         # Show Tray Icon
-        self.log_queue.put(f"INFO: {APP_NAME} started. Running in system tray.")
+        self.log_queue.put(f"{APP_NAME} started. Running in system tray.") # Simpler log message
         self.log_queue.put("STATUS: Stopped") # Initial status
 
+        # Timer to check log queue is in ConfigWindow, it will handle notifications via QApplication.instance()
+        # No separate timer or direct connection needed here for notifications anymore.
+
+    def show_system_notification(self, title: str, message: str):
+        """Displays a system tray notification."""
+        if self.tray_icon.isVisible(): # Only show if tray icon is active
+            icon_type = QSystemTrayIcon.MessageIcon.Information
+            self.tray_icon.showMessage(title, message, icon_type, 5000) # Show for 5 seconds
+        else:
+            # Fallback if tray icon isn't visible for some reason (should not happen in normal operation)
+            print(f"Tray Notification: {title} - {message}", file=sys.stderr)
 
     @pyqtSlot(QSystemTrayIcon.ActivationReason)
     def on_tray_activated(self, reason):
@@ -102,7 +113,9 @@ class AutoTidyApp(QApplication):
         if self.config_window.isVisible():
             self.config_window.hide()
         else:
-            self.config_window.force_show()
+            self.config_window.show()
+            self.config_window.raise_()
+            self.config_window.activateWindow()
 
     @pyqtSlot()
     def quit_app(self):

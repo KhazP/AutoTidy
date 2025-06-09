@@ -3,6 +3,7 @@ from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QListWidget, QPushButton, QLabel, QTextEdit,
     QMessageBox, QTableWidget, QTableWidgetItem, QHeaderView, QApplication
 )
+from PyQt6.QtGui import QKeySequence, QAction # Added QAction
 from PyQt6.QtCore import Qt, pyqtSlot, QVariant # QVariant might be needed for custom data
 from datetime import datetime
 
@@ -37,8 +38,10 @@ class UndoDialog(QDialog):
         self.runs_table = QTableWidget()
         self.runs_table.setColumnCount(3) # Run Start Time, Action Count, Run ID (Hidden)
         self.runs_table.setHorizontalHeaderLabels(["Run Start Time", "Action Count", "Run ID"])
-        self.runs_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        self.runs_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
+        runs_header = self.runs_table.horizontalHeader()
+        if runs_header:
+            runs_header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+            runs_header.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
         self.runs_table.setColumnHidden(2, True) # Hide Run ID column
         self.runs_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.runs_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers) # Read-only
@@ -53,8 +56,10 @@ class UndoDialog(QDialog):
         self.actions_table = QTableWidget()
         self.actions_table.setColumnCount(4) # Original Path, Action, New Path, Timestamp
         self.actions_table.setHorizontalHeaderLabels(["Original Path", "Action", "New Path/Details", "Timestamp"])
-        for i in range(4):
-            self.actions_table.horizontalHeader().setSectionResizeMode(i, QHeaderView.ResizeMode.Stretch if i < 2 else QHeaderView.ResizeMode.Interactive)
+        actions_header = self.actions_table.horizontalHeader()
+        if actions_header:
+            for i in range(4):
+                actions_header.setSectionResizeMode(i, QHeaderView.ResizeMode.Stretch if i < 2 else QHeaderView.ResizeMode.Interactive)
         self.actions_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.actions_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers) # Read-only
         self.actions_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
@@ -78,6 +83,14 @@ class UndoDialog(QDialog):
         main_layout.addWidget(QLabel("Log:"))
         main_layout.addWidget(self.status_log)
 
+        # Add tooltips and mnemonics
+        self.refresh_button.setText("&Refresh Run List")
+        self.refresh_button.setToolTip("Reload the list of action batches (F5)")
+        self.undo_batch_button.setText("Undo &Whole Batch")
+        self.undo_batch_button.setToolTip("Attempt to undo all actions in the selected batch (Ctrl+B)")
+        self.undo_selected_action_button.setText("Undo &Single File")
+        self.undo_selected_action_button.setToolTip("Attempt to undo only the selected file operation in the batch (Ctrl+U)")
+
         # --- Connect signals ---
         self.refresh_button.clicked.connect(self.populate_runs_list)
         self.runs_table.itemSelectionChanged.connect(self.on_run_selected)
@@ -87,6 +100,39 @@ class UndoDialog(QDialog):
 
         # --- Initial state ---
         self.populate_runs_list() # Load data
+        self._setup_shortcuts() # Call new method
+        self.runs_table.setFocus() # Set initial focus
+
+    def _setup_shortcuts(self):
+        """Setup keyboard shortcuts."""
+        self.refresh_button.setShortcut(QKeySequence(Qt.Key.Key_F5))
+        self.undo_batch_button.setShortcut(QKeySequence("Ctrl+B"))
+        self.undo_selected_action_button.setShortcut(QKeySequence("Ctrl+U"))
+        # Add a general close shortcut for the dialog
+        close_action = QAction("Close Dialog", self) # Need to import QAction from PyQt6.QtGui
+        close_action.setShortcut(QKeySequence(Qt.Key.Key_Escape))
+        close_action.triggered.connect(self.reject) # Or self.accept if that's preferred for Esc
+        self.addAction(close_action)
+
+    # Import QAction if not already imported at the top
+    # from PyQt6.QtGui import QAction
+
+    def keyPressEvent(self, event):
+        """Handle key presses for actions like Escape."""
+        if event.key() == Qt.Key.Key_Escape:
+            self.reject() # Close on Escape
+        elif event.key() == Qt.Key.Key_F5:
+            self.populate_runs_list()
+        # Ctrl+B for batch undo if button is enabled
+        elif event.matches(QKeySequence("Ctrl+B")):
+            if self.undo_batch_button.isEnabled():
+                self.handle_undo_batch()
+        # Ctrl+U for single undo if button is enabled
+        elif event.matches(QKeySequence("Ctrl+U")):
+            if self.undo_selected_action_button.isEnabled():
+                self.handle_undo_selected_action()
+        else:
+            super().keyPressEvent(event)
 
     def _log_message(self, message):
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -146,8 +192,17 @@ class UndoDialog(QDialog):
             return
 
         self.undo_batch_button.setEnabled(True)
-        # Retrieve run_id from the data stored in the first item of the selected row
-        selected_run_id_item = self.runs_table.item(self.runs_table.currentRow(), 0)
+        selected_row_index = self.runs_table.currentRow()
+        if selected_row_index < 0:
+            self._log_message("Error: No row selected in runs_table despite selected_items being present.")
+            self.undo_batch_button.setEnabled(False) # Should not happen if selected_items is true
+            return
+
+        selected_run_id_item = self.runs_table.item(selected_row_index, 0)
+        if not selected_run_id_item:
+            self._log_message("Error: Could not get item from selected run row.")
+            self.undo_batch_button.setEnabled(False)
+            return
         run_id = selected_run_id_item.data(self.RunIdRole)
 
         if not run_id:
@@ -204,6 +259,10 @@ class UndoDialog(QDialog):
             return
 
         selected_run_id_item = self.runs_table.item(self.runs_table.currentRow(), 0)
+        if not selected_run_id_item:
+            self._log_message("Error: Could not get item from selected run row for batch undo.")
+            QMessageBox.critical(self, "Error", "Could not retrieve item for the selected batch.")
+            return
         run_id = selected_run_id_item.data(self.RunIdRole)
 
         if not run_id:
@@ -240,6 +299,10 @@ class UndoDialog(QDialog):
 
         # Retrieve the full action data stored in the first item of the selected row
         action_data_item = self.actions_table.item(self.actions_table.currentRow(), 0)
+        if not action_data_item:
+            self._log_message("Error: Could not get item from selected action row.")
+            QMessageBox.critical(self, "Error", "Could not retrieve item for the selected action.")
+            return
         action_data = action_data_item.data(self.ActionDataRole)
 
         if not action_data:

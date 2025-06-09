@@ -150,6 +150,22 @@ This document provides a summary and high-level implementation plan for the Auto
 * Undo functionality for moved files.
 * Detailed notification system (only critical errors might use pop-ups).
 
+## Future Enhancements (Post-MVP)
+
+### User Experience Enhancements
+*   **Desktop Notifications:** Implement system notifications (e.g., using `QSystemTrayIcon.showMessage` or a platform-specific library) to inform users about completed background operations, significant errors, or other important events without requiring the main window to be open.
+*   **Keyboard Shortcuts & Accessibility:**
+    *   Define and implement standard keyboard shortcuts for common actions within the configuration window (e.g., Add Folder, Remove Folder, Start/Stop, navigating lists and inputs).
+    *   Ensure all UI elements are keyboard navigable (tab order).
+    *   Test and improve compatibility with screen readers by setting appropriate accessibility names and descriptions for widgets.
+*   **Theme Support:**
+    *   Investigate and implement options for light and dark themes. This could involve using QSS stylesheets that can be toggled by the user.
+    *   Ensure themes are applied consistently across all UI elements.
+*   **Improved Error Messaging & User Guidance:**
+    *   Review and enhance existing error messages to be more user-friendly, informative, and actionable.
+    *   Provide clearer contextual help or tooltips for complex settings or rules.
+    *   Consider a "first-run" experience or a brief tutorial for new users.
+
 ## Key Agent Instructions
 
 * Agent: Please generate the MVP codebase based on the details above.
