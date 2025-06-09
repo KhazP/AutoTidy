@@ -9,8 +9,8 @@ from PyQt6.QtCore import QTimer, Qt, pyqtSlot
 from config_manager import ConfigManager
 from worker import MonitoringWorker
 from ui_settings_dialog import SettingsDialog
-from ui_history_viewer_dialog import HistoryViewerDialog # Import History Viewer
-from history_manager import HistoryManager # Import HistoryManager
+
+
 from undo_manager import UndoManager # Added for Undo functionality
 from ui_undo_dialog import UndoDialog # Added for Undo functionality
 
@@ -23,7 +23,6 @@ class ConfigWindow(QWidget):
         super().__init__()
         self.config_manager = config_manager
         self.log_queue = log_queue
-        self.history_manager = HistoryManager(self.config_manager) # Instantiate HistoryManager
         self.undo_manager = UndoManager(self.config_manager) # Instantiate UndoManager
         self.monitoring_worker: MonitoringWorker | None = None
         self.worker_status = "Stopped" # Track worker status
@@ -46,9 +45,6 @@ class ConfigWindow(QWidget):
         top_controls_layout.addWidget(self.add_folder_button)
         top_controls_layout.addWidget(self.remove_folder_button)
         top_controls_layout.addStretch()
-
-        self.viewHistoryButton = QPushButton("View History") # Add View History button
-        top_controls_layout.addWidget(self.viewHistoryButton)
 
         self.view_history_button = QPushButton("View Action History / Undo") # New Undo button
         top_controls_layout.addWidget(self.view_history_button) # Add new button to layout
@@ -127,7 +123,6 @@ class ConfigWindow(QWidget):
         self.start_button.clicked.connect(self.start_monitoring)
         self.stop_button.clicked.connect(self.stop_monitoring)
         self.settings_button.clicked.connect(self.open_settings_dialog)
-        self.viewHistoryButton.clicked.connect(self.open_history_viewer) # Connect View History button
         self.view_history_button.clicked.connect(self.open_undo_dialog) # Connect new Undo button
 
         self._update_ui_for_status_and_mode() # Initial UI update
@@ -310,15 +305,7 @@ class ConfigWindow(QWidget):
     def open_settings_dialog(self):
         """Open the settings dialog window."""
         dialog = SettingsDialog(self.config_manager, self) # Pass config manager and parent
-        dialog.exec() # Show the dialog modally
-        self._update_ui_for_status_and_mode() # Refresh UI after settings change
-
-    @pyqtSlot()
-    def open_history_viewer(self):
-        """Opens the history viewer dialog."""
-        # Pass config_manager and history_manager
-        dialog = HistoryViewerDialog(self.config_manager, self.history_manager, self)
-        dialog.exec()
+        dialog.exec() # Show the dialog modally        self._update_ui_for_status_and_mode() # Refresh UI after settings change
 
     @pyqtSlot()
     def open_undo_dialog(self):

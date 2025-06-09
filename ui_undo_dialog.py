@@ -64,12 +64,10 @@ class UndoDialog(QDialog):
 
         top_layout.addLayout(left_panel_layout, 1) # Assign stretch factor
         top_layout.addLayout(right_panel_layout, 2) # Assign stretch factor
-        main_layout.addLayout(top_layout)
-
-        # Buttons
+        main_layout.addLayout(top_layout)        # Buttons
         buttons_layout = QHBoxLayout()
-        self.undo_batch_button = QPushButton("Undo Entire Batch")
-        self.undo_selected_action_button = QPushButton("Undo Selected Action")
+        self.undo_batch_button = QPushButton("Undo Whole Batch")
+        self.undo_selected_action_button = QPushButton("Undo Single File")
         buttons_layout.addWidget(self.undo_batch_button)
         buttons_layout.addWidget(self.undo_selected_action_button)
         main_layout.addLayout(buttons_layout)
