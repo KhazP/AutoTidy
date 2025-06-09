@@ -7,7 +7,14 @@ from PyQt6.QtCore import pyqtSlot, Qt # Added Qt
 
 from config_manager import ConfigManager
 from startup_manager import set_autostart
-from constants import APP_NAME, APP_VERSION # Import APP_VERSION
+from constants import (
+    APP_NAME, APP_VERSION,
+    NOTIFICATION_LEVEL_NONE,
+    NOTIFICATION_LEVEL_ERROR,
+    NOTIFICATION_LEVEL_SUMMARY,
+    NOTIFICATION_LEVEL_ALL,
+    DEFAULT_NOTIFICATION_LEVEL
+)
 
 class SettingsDialog(QDialog):
     """Dialog window for application settings."""
@@ -20,7 +27,8 @@ class SettingsDialog(QDialog):
         self.initial_archive_template = self.config_manager.get_archive_path_template()
         self.initial_schedule_config = self.config_manager.get_schedule_config()
         self.initial_dry_run_mode = self.config_manager.get_dry_run_mode()
-        self.initial_show_notifications = self.config_manager.get_setting("show_notifications", True) # Load initial value
+        # self.initial_show_notifications = self.config_manager.get_setting("show_notifications", True) # Old setting
+        self.initial_notification_level = self.config_manager.get_notification_level() # New setting
 
         self.setWindowTitle("AutoTidy Settings")
         self.setModal(True) # Block interaction with the main window
@@ -44,11 +52,34 @@ class SettingsDialog(QDialog):
         self.dryRunModeCheckbox.setToolTip("If checked, AutoTidy will log actions it would take but won't actually move/copy/delete files.")
         layout.addWidget(self.dryRunModeCheckbox)
 
-        # --- Show Notifications Checkbox ---
-        self.showNotificationsCheckbox = QCheckBox("Show desktop &notifications for completed scans")
-        self.showNotificationsCheckbox.setChecked(self.initial_show_notifications)
-        self.showNotificationsCheckbox.setToolTip("If checked, a desktop notification will be shown when a scan cycle completes and files are processed.")
-        layout.addWidget(self.showNotificationsCheckbox)
+        # --- Show Notifications Checkbox --- (This will be replaced by the ComboBox)
+        # self.showNotificationsCheckbox = QCheckBox("Show desktop &notifications for completed scans")
+        # self.showNotificationsCheckbox.setChecked(self.initial_show_notifications)
+        # self.showNotificationsCheckbox.setToolTip("If checked, a desktop notification will be shown when a scan cycle completes and files are processed.")
+        # layout.addWidget(self.showNotificationsCheckbox)
+
+        # --- Notification Level ComboBox ---
+        notification_layout = QHBoxLayout()
+        notification_label = QLabel("Notification &Level:")
+        self.notificationLevelComboBox = QComboBox()
+        self.notificationLevelComboBox.addItem("None (No notifications or logs)", NOTIFICATION_LEVEL_NONE)
+        self.notificationLevelComboBox.addItem("Errors Only (Notify on errors)", NOTIFICATION_LEVEL_ERROR)
+        self.notificationLevelComboBox.addItem("Summary (Notify after scan, show errors)", NOTIFICATION_LEVEL_SUMMARY)
+        self.notificationLevelComboBox.addItem("All (Detailed logs and all notifications)", NOTIFICATION_LEVEL_ALL)
+        self.notificationLevelComboBox.setToolTip("Control how much information AutoTidy provides through logs and desktop notifications.")
+        # Set initial value
+        current_level_index = self.notificationLevelComboBox.findData(self.initial_notification_level)
+        if current_level_index != -1:
+            self.notificationLevelComboBox.setCurrentIndex(current_level_index)
+        else: # Fallback if current value is somehow not in the list (e.g. old config)
+            default_level_index = self.notificationLevelComboBox.findData(DEFAULT_NOTIFICATION_LEVEL)
+            if default_level_index != -1:
+                self.notificationLevelComboBox.setCurrentIndex(default_level_index)
+
+        notification_layout.addWidget(notification_label)
+        notification_layout.addWidget(self.notificationLevelComboBox)
+        layout.addLayout(notification_layout)
+        # -----------------------------------
 
         # ----------------------------
 
@@ -163,8 +194,11 @@ class SettingsDialog(QDialog):
         # Dry Run Mode
         new_dry_run_mode = self.dryRunModeCheckbox.isChecked()
 
-        # Show Notifications
-        new_show_notifications = self.showNotificationsCheckbox.isChecked()
+        # Show Notifications (Old - replaced by notification_level)
+        # new_show_notifications = self.showNotificationsCheckbox.isChecked()
+
+        # Notification Level
+        new_notification_level = self.notificationLevelComboBox.currentData() # Get data (value) not text
 
         # Basic validation for archive template (ensure not empty, else ConfigManager defaults)
         if not new_archive_template:
@@ -198,30 +232,36 @@ class SettingsDialog(QDialog):
 
         # Check if archive_path_template changed
         if new_archive_template != self.initial_archive_template:
-            self.config_manager.set_archive_path_template(new_archive_template)
+            self.config_manager.set_setting("archive_path_template", new_archive_template)
             self.initial_archive_template = new_archive_template # Update initial state
             settings_changed = True
 
-        # Check if schedule settings changed
-        if (new_schedule_type != self.initial_schedule_config.get('type') or
-                new_interval_minutes != self.initial_schedule_config.get('interval_minutes')):
+        # Check if schedule config changed
+        current_schedule_config = self.config_manager.get_schedule_config()
+        if new_schedule_type != current_schedule_config.get('schedule_type') or \
+           new_interval_minutes != current_schedule_config.get('interval_minutes'):
             self.config_manager.set_schedule_config(new_schedule_type, new_interval_minutes)
-            self.initial_schedule_config = {'type': new_schedule_type, 'interval_minutes': new_interval_minutes}
+            self.initial_schedule_config = {'schedule_type': new_schedule_type, 'interval_minutes': new_interval_minutes} # Update initial
             settings_changed = True
 
         # Check if dry_run_mode changed
         if new_dry_run_mode != self.initial_dry_run_mode:
             self.config_manager.set_dry_run_mode(new_dry_run_mode)
-            self.initial_dry_run_mode = new_dry_run_mode
+            self.initial_dry_run_mode = new_dry_run_mode # Update initial state
             settings_changed = True
 
-        # Check if show_notifications changed
-        if new_show_notifications != self.initial_show_notifications:
-            self.config_manager.set_setting("show_notifications", new_show_notifications)
-            self.initial_show_notifications = new_show_notifications
+        # Check if show_notifications changed (Old - replaced by notification_level)
+        # if new_show_notifications != self.initial_show_notifications:
+        #     self.config_manager.set_setting("show_notifications", new_show_notifications)
+        #     self.initial_show_notifications = new_show_notifications # Update initial state
+        #     settings_changed = True
+
+        # Check if notification_level changed
+        if new_notification_level != self.initial_notification_level:
+            self.config_manager.set_notification_level(new_notification_level)
+            self.initial_notification_level = new_notification_level # Update initial state
             settings_changed = True
 
-        # Save config if any setting changed
         if settings_changed:
             self.config_manager.save_config()
 

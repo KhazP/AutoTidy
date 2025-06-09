@@ -2,6 +2,11 @@ import json
 import os
 import sys
 from pathlib import Path
+from constants import (
+    DEFAULT_NOTIFICATION_LEVEL,
+    NOTIFICATION_LEVEL_ALL, # Assuming you might want to use this directly
+    # Add other notification levels if needed for validation or specific logic
+)
 
 # DEFAULT_CONFIG = {'folders': [], 'settings': {'start_on_login': False}} # Default structure - Moved default to __init__
 
@@ -25,7 +30,8 @@ class ConfigManager:
                 'archive_path_template': '_Cleanup/{YYYY}-{MM}-{DD}',
                 'schedule_type': 'interval',  # Default schedule type
                 'interval_minutes': 60,  # Default interval in minutes
-                'dry_run_mode': False  # Default dry run mode
+                'dry_run_mode': False,  # Default dry run mode
+                'notification_level': DEFAULT_NOTIFICATION_LEVEL # New setting
             }
         }
         self.config = self._load_config()
@@ -263,3 +269,16 @@ class ConfigManager:
         if not isinstance(enabled, bool): # Basic type validation
             enabled = False # Default to False if invalid type
         self.set_setting('dry_run_mode', enabled)
+
+    def get_notification_level(self) -> str:
+        """Returns the current notification level setting."""
+        return self.config.get('settings', {}).get('notification_level', DEFAULT_NOTIFICATION_LEVEL)
+
+    def set_notification_level(self, level: str):
+        """Sets the notification level."""
+        # Basic validation could be added here to ensure 'level' is one of the defined constants
+        # from constants.py (e.g., NOTIFICATION_LEVEL_NONE, NOTIFICATION_LEVEL_ERROR, etc.)
+        # For now, we assume valid input.
+        settings = self.config.setdefault('settings', {})
+        settings['notification_level'] = level
+        self.save_config()
