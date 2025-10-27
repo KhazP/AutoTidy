@@ -2,6 +2,7 @@ import os
 import sys
 import queue
 import re
+import html
 from datetime import datetime, timedelta
 
 try:
@@ -106,6 +107,7 @@ from constants import (
     NOTIFICATION_LEVEL_NONE,
     NOTIFICATION_LEVEL_ERROR,
     NOTIFICATION_LEVEL_SUMMARY,
+    EXCLUSION_HELP_CONTENT,
 )
 
 
@@ -1404,8 +1406,52 @@ class ConfigWindow(QWidget):
         self.log_queue.put(f"INFO: Removed exclusion pattern '{pattern}' for {self.folder_list_widget.currentItem().text()}.")
 
     def show_exclusion_pattern_help(self):
-        self.log_queue.put("INFO: Show exclusion pattern help clicked (placeholder).")
-        QMessageBox.information(self, "Exclusion Help", "Enter patterns (e.g., *.tmp, temp_folder/) to exclude files/folders. One per line.")
+        self.log_queue.put("INFO: Show exclusion pattern help clicked.")
+
+        glob_list_html = "".join(
+            f"<li><code>{html.escape(pattern)}</code> – {html.escape(description)}</li>"
+            for pattern, description in EXCLUSION_HELP_CONTENT["glob_examples"]
+        )
+        regex_list_html = "".join(
+            f"<li><code>{html.escape(pattern)}</code> – {html.escape(description)}</li>"
+            for pattern, description in EXCLUSION_HELP_CONTENT["regex_examples"]
+        )
+        logic_list_html = "".join(
+            f"<li>{html.escape(note)}</li>"
+            for note in EXCLUSION_HELP_CONTENT["logic_notes"]
+        )
+
+        message_html = (
+            f"<p>{html.escape(EXCLUSION_HELP_CONTENT['intro'])}</p>"
+            "<h4>Wildcard (glob) examples</h4>"
+            f"<ul>{glob_list_html}</ul>"
+            "<h4>Regular expression examples</h4>"
+            f"<ul>{regex_list_html}</ul>"
+            "<h4>How exclusions interact with rule logic</h4>"
+            f"<ul>{logic_list_html}</ul>"
+            "<p><a href='learn_more_exclusions'>Learn more in the README</a></p>"
+        )
+
+        msg_box = QMessageBox(self)
+        msg_box.setWindowTitle("Exclusion Pattern Help")
+        msg_box.setIcon(QMessageBox.Icon.Information)
+        msg_box.setTextFormat(Qt.TextFormat.RichText)
+        msg_box.setText(message_html)
+        msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
+        msg_box.setTextInteractionFlags(Qt.TextInteractionFlag.TextBrowserInteraction)
+        msg_box.linkActivated.connect(self._open_exclusion_help_link)
+        msg_box.exec()
+
+    def _open_exclusion_help_link(self, link: str):
+        if link != "learn_more_exclusions":
+            return
+
+        readme_path = Path(__file__).resolve().parent / "README.md"
+        anchor = EXCLUSION_HELP_CONTENT.get("readme_anchor", "")
+        url = QUrl.fromLocalFile(str(readme_path))
+        if anchor:
+            url.setFragment(anchor.lstrip("#"))
+        QDesktopServices.openUrl(url)
 
     def save_exclusion_list_changes(self, item: QListWidgetItem):
         if item:
