@@ -1,3 +1,4 @@
+import copy
 import json
 import os
 import sys
@@ -89,7 +90,7 @@ class ConfigManager:
                 # Handle migration from old list format
                 elif isinstance(config_data, list):
                      print(f"Warning: Migrating old config format in {self.config_file}.", file=sys.stderr)
-                     new_config = self.default_config.copy()
+                     new_config = copy.deepcopy(self.default_config)
                      # Validate folder items (optional but good)
                      valid_folders = []
                      for item in config_data:
@@ -110,22 +111,22 @@ class ConfigManager:
                      return new_config
                 else:
                     print(f"Warning: Config file {self.config_file} has invalid format. Using default.", file=sys.stderr)
-                    default_config = self.default_config.copy()
+                    default_config = copy.deepcopy(self.default_config)
                     default_config.setdefault('excluded_folders', [])
                     return default_config # Return a copy
         except FileNotFoundError:
             print(f"Info: Config file {self.config_file} not found. Using default.", file=sys.stderr)
-            default_config = self.default_config.copy()
+            default_config = copy.deepcopy(self.default_config)
             default_config.setdefault('excluded_folders', [])
             return default_config # Return a copy
         except json.JSONDecodeError:
             print(f"Error: Could not decode JSON from {self.config_file}. Using default.", file=sys.stderr)
-            default_config = self.default_config.copy()
+            default_config = copy.deepcopy(self.default_config)
             default_config.setdefault('excluded_folders', [])
             return default_config # Return a copy
         except Exception as e:
             print(f"Error loading config: {e}", file=sys.stderr)
-            default_config = self.default_config.copy()
+            default_config = copy.deepcopy(self.default_config)
             default_config.setdefault('excluded_folders', [])
             return default_config # Return a copy
 
