@@ -36,7 +36,15 @@ except ImportError:  # pragma: no cover - fallback for test environments with st
     QStackedLayout = getattr(_QtWidgets, "QStackedLayout", object)
 
 try:
-    from PyQt6.QtGui import QDesktopServices, QKeySequence, QAction # Import QAction
+    from PyQt6.QtGui import (
+        QDesktopServices,
+        QKeySequence,
+        QAction,  # Import QAction
+        QBrush,
+        QColor,
+        QFont,
+        QPixmap,
+    )
 except ImportError:  # pragma: no cover - fallback for test environments with stubs
     from PyQt6 import QtGui as _QtGui  # type: ignore
 
@@ -56,6 +64,10 @@ except ImportError:  # pragma: no cover - fallback for test environments with st
     QDesktopServices = getattr(_QtGui, "QDesktopServices", _DesktopServicesFallback)
     QKeySequence = getattr(_QtGui, "QKeySequence", _KeySequenceFallback)
     QAction = getattr(_QtGui, "QAction", _ActionFallback)
+    QBrush = getattr(_QtGui, "QBrush", object)
+    QColor = getattr(_QtGui, "QColor", object)
+    QFont = getattr(_QtGui, "QFont", object)
+    QPixmap = getattr(_QtGui, "QPixmap", object)
 
 try:
     from PyQt6.QtCore import QTimer, Qt, QUrl, pyqtSlot
@@ -127,6 +139,29 @@ ACTION_VALUE_TO_TEXT = {
 
 ACTION_TEXT_TO_VALUE = {v: k for k, v in ACTION_VALUE_TO_TEXT.items()}
 
+
+def _qt_item_role(name: str, fallback: int) -> int:
+    """Return a Qt item data role constant, falling back to integers for stubs."""
+    item_data_role = getattr(Qt, "ItemDataRole", None)
+    if item_data_role is not None and hasattr(item_data_role, name):
+        return getattr(item_data_role, name)
+    return getattr(Qt, name, fallback) if hasattr(Qt, name) else fallback
+
+
+DISPLAY_ROLE = _qt_item_role("DisplayRole", 0)
+DECORATION_ROLE = _qt_item_role("DecorationRole", 1)
+TOOLTIP_ROLE = _qt_item_role("ToolTipRole", 3)
+FONT_ROLE = _qt_item_role("FontRole", 6)
+FOREGROUND_ROLE = _qt_item_role("ForegroundRole", 9)
+ITEM_PATH_ROLE = _qt_item_role("UserRole", 32)
+
+ACTION_COLOR_MAP = {
+    "move": "#4CAF50",
+    "copy": "#2196F3",
+    "delete_to_trash": "#FF9800",
+    "delete_permanently": "#F44336",
+}
+
 class ConfigWindow(QWidget):
     """Main configuration window for AutoTidy."""
 
@@ -138,6 +173,8 @@ class ConfigWindow(QWidget):
         self.monitoring_worker: MonitoringWorker | None = None
         self.worker_status = "Stopped" # Track worker status
         self._log_entries: list[tuple[str, str]] = []
+        self._action_chip_cache: dict[str, QPixmap | None] = {}
+        self._supports_action_pixmaps = hasattr(QPixmap, "fill") and callable(getattr(QPixmap, "fill", None))
 
         self.setWindowTitle("AutoTidy Configuration")
         self.setGeometry(200, 200, 600, 450) # x, y, width, height
@@ -606,6 +643,163 @@ class ConfigWindow(QWidget):
         should_show = not self.config_manager.get_setting("hide_instructions", False)
         self.instructions_container.setVisible(should_show)
 
+    def _set_folder_item_path(self, item: QListWidgetItem, path: str) -> None:
+        """Persist the folder path on the list widget item for later lookups."""
+        if not item:
+            return
+        try:
+            item.setData(ITEM_PATH_ROLE, path)
+        except Exception:
+            pass
+
+    def _get_item_path(self, item: QListWidgetItem | None) -> str:
+        """Return the folder path associated with a list widget item."""
+        if item is None:
+            return ""
+        data_value = None
+        try:
+            data_value = item.data(ITEM_PATH_ROLE)
+        except Exception:
+            data_value = None
+        if data_value:
+            return str(data_value)
+        try:
+            return item.text()
+        except Exception:
+            return ""
+
+    def _find_folder_item_by_path(self, path: str) -> QListWidgetItem | None:
+        """Locate the list widget item that represents the provided folder path."""
+        if not path:
+            return None
+        for index in range(self.folder_list_widget.count()):
+            item = self.folder_list_widget.item(index)
+            if item and self._get_item_path(item) == path:
+                return item
+        return None
+
+    def _to_qcolor(self, color_value: str | None):
+        """Safely construct a QColor when the GUI backend supports it."""
+        if not color_value:
+            return None
+        try:
+            return QColor(color_value)
+        except Exception:
+            return None
+
+    def _get_action_chip(self, action_value: str) -> QPixmap | None:
+        """Return a cached pixmap chip for the action, if supported."""
+        if not self._supports_action_pixmaps:
+            return None
+        if action_value in self._action_chip_cache:
+            return self._action_chip_cache[action_value]
+
+        color_value = ACTION_COLOR_MAP.get(action_value)
+        if not color_value:
+            self._action_chip_cache[action_value] = None
+            return None
+
+        try:
+            color = QColor(color_value)
+            pixmap = QPixmap(12, 12)
+            pixmap.fill(color)
+        except Exception:
+            self._supports_action_pixmaps = False
+            pixmap = None
+
+        self._action_chip_cache[action_value] = pixmap
+        return pixmap
+
+    def _build_folder_item_summary(self, path: str, rule: dict | None) -> str:
+        """Create the textual summary for a monitored folder list entry."""
+        if not path:
+            return ""
+        rule = rule or {}
+        action_value = rule.get("action", "move")
+        action_label = ACTION_VALUE_TO_TEXT.get(action_value, action_value.title())
+        enabled = rule.get("enabled", True)
+        status_label = "Enabled" if enabled else "Disabled"
+        return f"{path} — {action_label} ({status_label})"
+
+    def _build_folder_item_tooltip(self, path: str, rule: dict | None) -> str:
+        """Create a tooltip describing the rule applied to a monitored folder."""
+        if not path:
+            return ""
+        rule = rule or {}
+        action_value = rule.get("action", "move")
+        action_label = ACTION_VALUE_TO_TEXT.get(action_value, action_value.title())
+        enabled = rule.get("enabled", True)
+        destination = rule.get("destination_folder", "")
+
+        tooltip_lines = [f"<b>{html.escape(path)}</b>"]
+        tooltip_lines.append(html.escape(f"Action: {action_label}"))
+        tooltip_lines.append(html.escape(f"Status: {'Enabled' if enabled else 'Disabled'}"))
+        if destination:
+            tooltip_lines.append(html.escape(f"Destination: {destination}"))
+        return "<br/>".join(tooltip_lines)
+
+    def _apply_folder_item_style(self, item: QListWidgetItem, rule: dict | None) -> None:
+        """Apply font and decoration styling for a folder summary entry."""
+        if not item:
+            return
+        rule = rule or {}
+        enabled = rule.get("enabled", True)
+        action_value = rule.get("action", "move")
+
+        font_value = None
+        try:
+            font_value = QFont()
+            font_value.setBold(not enabled)
+        except Exception:
+            font_value = None
+        try:
+            item.setData(FONT_ROLE, font_value)
+        except Exception:
+            pass
+
+        brush_value = None
+        if not enabled:
+            color = self._to_qcolor("#8A8A8A")
+            if color is not None:
+                try:
+                    brush_value = QBrush(color)
+                except Exception:
+                    brush_value = None
+        try:
+            item.setData(FOREGROUND_ROLE, brush_value)
+        except Exception:
+            pass
+
+        decoration = self._get_action_chip(action_value)
+        try:
+            item.setData(DECORATION_ROLE, decoration)
+        except Exception:
+            pass
+
+    def _refresh_folder_item_display(self, item: QListWidgetItem | None) -> None:
+        """Synchronize the visible summary, tooltip, and styling for an item."""
+        if item is None:
+            return
+        path = self._get_item_path(item)
+        if not path:
+            return
+        rule = self.config_manager.get_folder_rule(path)
+        summary = self._build_folder_item_summary(path, rule)
+        tooltip = self._build_folder_item_tooltip(path, rule)
+        try:
+            item.setData(DISPLAY_ROLE, summary)
+            item.setData(TOOLTIP_ROLE, tooltip)
+        except Exception:
+            try:
+                item.setText(summary)
+            except Exception:
+                pass
+            try:
+                item.setToolTip(tooltip)
+            except Exception:
+                pass
+        self._apply_folder_item_style(item, rule)
+
     def _filter_folder_list(self, search_term: str):
         """Filter the monitored folder list using the provided search term."""
         list_widget = getattr(self, "folder_list_widget", None)
@@ -679,7 +873,10 @@ class ConfigWindow(QWidget):
             summary_label.setText(html.escape("Select a monitored folder to see its rule."))
             return
 
-        path = current_item.text()
+        path = self._get_item_path(current_item)
+        if not path:
+            summary_label.setText(html.escape("Select a monitored folder to see its rule."))
+            return
         stripped_path = path.rstrip("/\\")
         if stripped_path:
             folder_name_candidate = stripped_path.split("/")[-1]
@@ -799,7 +996,9 @@ class ConfigWindow(QWidget):
         for item in folders:
             path = item.get('path')
             if path:
-                list_item = QListWidgetItem(path)
+                list_item = QListWidgetItem()
+                self._set_folder_item_path(list_item, path)
+                self._refresh_folder_item_display(list_item)
                 self.folder_list_widget.addItem(list_item)
 
         if self.folder_list_widget.count() > 0:
@@ -825,7 +1024,9 @@ class ConfigWindow(QWidget):
         if dir_path:
             # Use default rules initially
             if self.config_manager.add_folder(dir_path):
-                list_item = QListWidgetItem(dir_path)
+                list_item = QListWidgetItem()
+                self._set_folder_item_path(list_item, dir_path)
+                self._refresh_folder_item_display(list_item)
                 self.folder_list_widget.addItem(list_item)
                 self.folder_list_widget.setCurrentItem(list_item) # Select the new item
                 self.log_queue.put(f"INFO: Added folder: {dir_path}")
@@ -844,7 +1045,10 @@ class ConfigWindow(QWidget):
         """Remove the selected folder from monitoring."""
         current_item = self.folder_list_widget.currentItem()
         if current_item:
-            path = current_item.text()
+            path = self._get_item_path(current_item)
+            if not path:
+                QMessageBox.warning(self, "Missing Path", "The selected folder entry is missing its path information.")
+                return
             reply = QMessageBox.question(self, "Confirm Removal",
                                          f"Are you sure you want to stop monitoring '{path}'?",
                                          QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
@@ -893,9 +1097,15 @@ class ConfigWindow(QWidget):
     def update_rule_inputs(self, current: QListWidgetItem | None, previous: QListWidgetItem | None): # Allow None
         """Update rule input fields when folder selection changes."""
         self._update_placeholder_visibility()
+        if previous is not None:
+            self._refresh_folder_item_display(previous)
         if current:
-            path = current.text()
-            rule = self.config_manager.get_folder_rule(path)
+            path = self._get_item_path(current)
+            if not path:
+                self._refresh_folder_item_display(current)
+                rule = None
+            else:
+                rule = self.config_manager.get_folder_rule(path)
             if rule:
                 # Block signals temporarily to prevent save_rule_changes from firing
                 self.age_spinbox.blockSignals(True)
@@ -1005,6 +1215,8 @@ class ConfigWindow(QWidget):
             self.exclusion_help_button.setEnabled(False) # Disable help button
             self._update_destination_enabled_state(base_enabled=False)
         self._update_placeholder_visibility()
+        if current is not None:
+            self._refresh_folder_item_display(current)
         self._update_rule_summary()
 
     def _update_destination_enabled_state(self, base_enabled: bool | None = None):
@@ -1029,7 +1241,10 @@ class ConfigWindow(QWidget):
         """Save the current rule input values for the selected folder."""
         current_item = self.folder_list_widget.currentItem()
         if current_item:
-            path = current_item.text()
+            path = self._get_item_path(current_item)
+            if not path:
+                QMessageBox.warning(self, "Missing Path", "The selected folder entry is missing its path information.")
+                return
             age = self.age_spinbox.value()
             pattern = self.pattern_lineedit.text()
             rule_logic = self.rule_logic_combo.currentText()
@@ -1088,6 +1303,7 @@ class ConfigWindow(QWidget):
                 # Should not happen if item exists
                 self.log_queue.put(f"ERROR: Failed to update rules for {path} (not found in config?)")
 
+            self._refresh_folder_item_display(current_item)
         self._update_rule_summary()
 
     @pyqtSlot()
@@ -1098,7 +1314,8 @@ class ConfigWindow(QWidget):
             return
 
         existing_value = self.destination_lineedit.text().strip()
-        start_dir = existing_value or self.folder_list_widget.currentItem().text()
+        current_path = self._get_item_path(self.folder_list_widget.currentItem())
+        start_dir = existing_value or current_path
         directory = QFileDialog.getExistingDirectory(self, "Select Destination Folder", start_dir)
         if directory:
             self.destination_lineedit.setText(directory)
@@ -1218,8 +1435,11 @@ class ConfigWindow(QWidget):
         if not current_item:
             return None
 
-        path = Path(current_item.text())
-        return path
+        path_str = self._get_item_path(current_item)
+        if not path_str:
+            return None
+
+        return Path(path_str)
 
     @pyqtSlot()
     def preview_rule(self):
@@ -1524,20 +1744,22 @@ class ConfigWindow(QWidget):
                         expanded_dest_folder = os.path.expandvars(rule_def.get('destination_folder', ''))
 
                         # Check if folder already exists in list, if not, add it
-                        existing_items_texts = []
+                        existing_item_paths = []
                         for i in range(self.folder_list_widget.count()):
                             item = self.folder_list_widget.item(i)
-                            if item: # Ensure item is not None before calling text()
-                                existing_items_texts.append(item.text())
+                            if item:
+                                existing_item_paths.append(self._get_item_path(item))
                         
                         normalized_action = self.config_manager.normalize_action(rule_def.get('action', 'move'))
                         normalized_rule_def = dict(rule_def)
                         normalized_rule_def['action'] = normalized_action
                         normalized_rule_def['destination_folder'] = expanded_dest_folder
 
-                        if expanded_folder_path not in existing_items_texts:
+                        if expanded_folder_path not in existing_item_paths:
                             if self.config_manager.add_folder(expanded_folder_path, normalized_rule_def): # Add with template rule
-                                list_item = QListWidgetItem(expanded_folder_path)
+                                list_item = QListWidgetItem()
+                                self._set_folder_item_path(list_item, expanded_folder_path)
+                                self._refresh_folder_item_display(list_item)
                                 self.folder_list_widget.addItem(list_item)
                                 folders_added_or_updated.append(expanded_folder_path)
                                 self.log_queue.put(f"INFO: Added folder '{expanded_folder_path}' from template '{template_name}'.")
@@ -1556,8 +1778,11 @@ class ConfigWindow(QWidget):
                             enabled=rule_def.get('enabled', True)
                         )
                         if update_success:
-                            if expanded_folder_path not in folders_added_or_updated: 
+                            if expanded_folder_path not in folders_added_or_updated:
                                 folders_added_or_updated.append(expanded_folder_path)
+                            existing_item = self._find_folder_item_by_path(expanded_folder_path)
+                            if existing_item is not None:
+                                self._refresh_folder_item_display(existing_item)
                             self.log_queue.put(f"INFO: Applied rule from template '{template_name}' to folder '{expanded_folder_path}'.")
                         else:
                             self.log_queue.put(f"ERROR: Failed to apply rule from template '{template_name}' to folder '{expanded_folder_path}'.")
@@ -1571,10 +1796,10 @@ class ConfigWindow(QWidget):
                         if self.folder_list_widget.count() > 0:
                             # Try to select the last modified/added folder from the template
                             last_affected_folder = folders_added_or_updated[-1]
-                            items = self.folder_list_widget.findItems(last_affected_folder, Qt.MatchFlag.MatchExactly)
-                            if items:
-                                self.folder_list_widget.setCurrentItem(items[0])
-                            else: 
+                            item_to_select = self._find_folder_item_by_path(last_affected_folder)
+                            if item_to_select is not None:
+                                self.folder_list_widget.setCurrentItem(item_to_select)
+                            else:
                                 self.folder_list_widget.setCurrentRow(0)
                         else: 
                             self.update_rule_inputs(None, None) # Pass None as QListWidgetItem
@@ -1625,7 +1850,9 @@ class ConfigWindow(QWidget):
         self.exclusion_list_widget.blockSignals(False)
 
         self.save_rule_changes()
-        self.log_queue.put(f"INFO: Added exclusion pattern '{pattern}' for {self.folder_list_widget.currentItem().text()}.")
+        folder_path = self._get_item_path(self.folder_list_widget.currentItem())
+        if folder_path:
+            self.log_queue.put(f"INFO: Added exclusion pattern '{pattern}' for {folder_path}.")
 
     def remove_selected_exclusion_pattern(self):
         """Remove the currently selected exclusion pattern after confirmation."""
@@ -1653,7 +1880,9 @@ class ConfigWindow(QWidget):
         row = self.exclusion_list_widget.row(current_item)
         self.exclusion_list_widget.takeItem(row)
         self.save_rule_changes()
-        self.log_queue.put(f"INFO: Removed exclusion pattern '{pattern}' for {self.folder_list_widget.currentItem().text()}.")
+        folder_path = self._get_item_path(self.folder_list_widget.currentItem())
+        if folder_path:
+            self.log_queue.put(f"INFO: Removed exclusion pattern '{pattern}' for {folder_path}.")
 
     def show_exclusion_pattern_help(self):
         self.log_queue.put("INFO: Show exclusion pattern help clicked.")
