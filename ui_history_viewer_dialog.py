@@ -148,6 +148,11 @@ class HistoryViewerDialog(QDialog):
 
         main_layout.addWidget(self.filters_group)
 
+        # Summary label for table data
+        self.summaryLabel = QLabel()
+        self.summaryLabel.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
+        main_layout.addWidget(self.summaryLabel)
+
         # Table Widget
         self.historyTable = QTableWidget()
         self.column_headers = [
@@ -204,6 +209,9 @@ class HistoryViewerDialog(QDialog):
         main_layout.addLayout(buttons_layout)
 
         self.historyTable.itemSelectionChanged.connect(self.update_undo_button_state)
+
+        self.last_refresh_time = None
+        self._update_summary_label(0, 0)
 
         self.load_history_data() # Load all data first
         self.apply_filters() # Then apply default filters
@@ -403,10 +411,23 @@ class HistoryViewerDialog(QDialog):
             self.undoButton.setEnabled(False)
 
 
+    def _update_summary_label(self, total_count=None, filtered_count=None, refresh_time=None):
+        total = len(self.all_history_data) if total_count is None else total_count
+        filtered = self.historyTable.rowCount() if filtered_count is None else filtered_count
+        timestamp = refresh_time if refresh_time is not None else self.last_refresh_time
+        if timestamp is not None:
+            formatted_time = timestamp.strftime("%Y-%m-%d %H:%M:%S")
+        else:
+            formatted_time = "N/A"
+        self.summaryLabel.setText(
+            f"Showing {filtered} of {total} entries (Last refreshed: {formatted_time})."
+        )
+
     def load_history_data(self):
         """Loads all history data from the file and stores it."""
         self.all_history_data = []
         history_file = self.history_manager.history_file_path # Use the path from history_manager
+        self.last_refresh_time = datetime.now()
         if not history_file.exists():
             # QMessageBox.information(self, "History", "No history data found.")
             # No need for a message if the file simply doesn't exist yet.
@@ -530,6 +551,11 @@ class HistoryViewerDialog(QDialog):
             for i in range(len(self.column_headers)):
                 if i not in [self.column_headers.index("Details"), ts_col_index]:
                     header.setSectionResizeMode(i, QHeaderView.ResizeMode.Interactive)
+        self._update_summary_label(
+            total_count=len(self.all_history_data),
+            filtered_count=len(filtered_data),
+            refresh_time=self.last_refresh_time,
+        )
         self.update_undo_button_state()
 
 
@@ -561,6 +587,8 @@ class HistoryViewerDialog(QDialog):
             QMessageBox.information(self, "Export Successful", f"Logs successfully exported to {file_path}")
         except IOError as e:
             QMessageBox.critical(self, "Export Error", f"Could not write to file: {e}")
+        finally:
+            self._update_summary_label()
 
     # Remove the old load_history method as its functionality is now in load_history_data and apply_filters
     # def load_history(self):
