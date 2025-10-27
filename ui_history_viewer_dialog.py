@@ -7,8 +7,8 @@ from PyQt6.QtWidgets import (
     QLabel, QLineEdit, QComboBox, QDateEdit, QGridLayout, QGroupBox,
     QToolButton, QWidget
 )
-from PyQt6.QtGui import QKeySequence
-from PyQt6.QtCore import Qt, QDateTime, QTimer
+from PyQt6.QtGui import QKeySequence, QDesktopServices, QGuiApplication
+from PyQt6.QtCore import Qt, QDateTime, QTimer, QUrl
 from datetime import datetime # Added to resolve datetime undefined error
 import constants
 import csv # For CSV export
@@ -178,6 +178,11 @@ class HistoryViewerDialog(QDialog):
 
 
         main_layout.addWidget(self.historyTable)
+        self.historyTable.setToolTip(
+            "Double-click a row to open its original and destination paths. "
+            "Missing files are copied to the clipboard for quick access."
+        )
+        self.historyTable.itemDoubleClicked.connect(self._handle_history_item_activation)
 
         # Buttons Layout
         buttons_layout = QHBoxLayout()
@@ -229,6 +234,62 @@ class HistoryViewerDialog(QDialog):
         self.undoButton.setShortcut(QKeySequence("Ctrl+Z"))
         # Close on Escape is usually default for QDialog.accepted/rejected
         # self.closeButton.setShortcut(QKeySequence(Qt.Key.Key_Escape)) # QDialog handles Esc for reject/close
+
+    def _handle_history_item_activation(self, item):
+        """Open or copy the paths associated with the activated history row."""
+        if not item:
+            return
+
+        row = item.row()
+        path_columns = [
+            ("Original Path", self.column_headers.index("Original Path")),
+            ("Destination Path", self.column_headers.index("Destination Path")),
+        ]
+
+        copied_details = []
+        failed_to_open = []
+
+        for label, column in path_columns:
+            table_item = self.historyTable.item(row, column)
+            if not table_item:
+                continue
+
+            path_text = table_item.text().strip()
+            if not path_text:
+                continue
+
+            path_obj = Path(path_text)
+            if path_obj.exists():
+                url = QUrl.fromLocalFile(str(path_obj))
+                if not QDesktopServices.openUrl(url):
+                    failed_to_open.append(f"{label}: {path_text}")
+                    clipboard = QGuiApplication.clipboard()
+                    clipboard.setText(path_text)
+                    copied_details.append(f"{label}: {path_text}")
+            else:
+                clipboard = QGuiApplication.clipboard()
+                clipboard.setText(path_text)
+                copied_details.append(f"{label}: {path_text}")
+
+        if failed_to_open:
+            QMessageBox.warning(
+                self,
+                "Unable to open path",
+                "\n".join([
+                    "The following path could not be opened and was copied to the clipboard:",
+                    *failed_to_open,
+                ]),
+            )
+
+        if copied_details and not failed_to_open:
+            QMessageBox.information(
+                self,
+                "Path copied",
+                "\n".join([
+                    "The following paths were not found and were copied to the clipboard:",
+                    *copied_details,
+                ]),
+            )
 
     def toggle_advanced_filters(self, checked: bool):
         """Show or hide advanced filter controls."""
