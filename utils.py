@@ -75,7 +75,8 @@ def process_file_action(
     rule_age_days: int,  # New parameter for history logging
     rule_use_regex: bool, # New parameter for history logging
     history_logger_callable, # New parameter for history logging
-    run_id: str # New parameter for batch operation run_id
+    run_id: str, # New parameter for batch operation run_id
+    destination_folder: str | None = None,
 ) -> tuple[bool, str]:
     """
     Processes a file by moving, copying, or deleting it based on the provided template and action,
@@ -91,6 +92,9 @@ def process_file_action(
         rule_age_days: Age from the rule that matched this file.
         rule_use_regex: Boolean, if regex was used for the pattern.
         history_logger_callable: Callable (e.g., HistoryManager.log_action) to log the action.
+        destination_folder: Optional destination override for move/copy actions. Supports
+            environment variables, user home expansion, and relative paths resolved against
+            the monitored folder when not absolute.
 
     Returns:
         A tuple (success: bool, message: str).
@@ -108,15 +112,41 @@ def process_file_action(
             file_ext = file_path.suffix
             original_folder_name = monitored_folder_path.name
 
-            resolved_template = archive_path_template.replace("{YYYY}", year)
-            resolved_template = resolved_template.replace("{MM}", month)
-            resolved_template = resolved_template.replace("{DD}", day)
-            resolved_template = resolved_template.replace("{FILENAME}", filename_stem)
-            resolved_template = resolved_template.replace("{EXT}", file_ext)
-            resolved_template = resolved_template.replace("{ORIGINAL_FOLDER_NAME}", original_folder_name)
+            replacements = {
+                "{YYYY}": year,
+                "{MM}": month,
+                "{DD}": day,
+                "{FILENAME}": filename_stem,
+                "{EXT}": file_ext,
+                "{ORIGINAL_FOLDER_NAME}": original_folder_name,
+            }
 
-            target_base_dir = monitored_folder_path / resolved_template
-            target_file_path = target_base_dir / filename_full # Initial proposed path
+            def apply_template(template: str) -> str:
+                result = template
+                for placeholder, value in replacements.items():
+                    result = result.replace(placeholder, value)
+                return result
+
+            destination_value = (destination_folder or "").strip()
+            template_in_use = destination_value if destination_value else archive_path_template
+            resolved_template = apply_template(template_in_use)
+            expanded_template = os.path.expandvars(resolved_template)
+            expanded_template = os.path.expanduser(expanded_template)
+            includes_filename_tokens = any(token in template_in_use for token in ("{FILENAME}", "{EXT}"))
+
+            target_path_candidate = Path(expanded_template)
+            if not target_path_candidate.is_absolute():
+                target_path_candidate = (monitored_folder_path / target_path_candidate).resolve()
+            else:
+                # Normalize absolute paths as well
+                target_path_candidate = target_path_candidate.resolve()
+
+            if includes_filename_tokens:
+                target_file_path = target_path_candidate
+                target_base_dir = target_file_path.parent
+            else:
+                target_base_dir = target_path_candidate
+                target_file_path = target_base_dir / filename_full
 
             # Simulate filename collision handling for dry run as well
             counter = 1
@@ -154,8 +184,10 @@ def process_file_action(
             elif dry_run and target_file_path.exists(): # For dry run, if initial path exists, simulate one step of collision avoidance
                 target_file_path = target_base_dir / f"{filename_stem}_1{file_ext}"
 
-
-            relative_target_path = target_base_dir.relative_to(monitored_folder_path) / target_file_path.name
+            try:
+                relative_target_path = target_file_path.relative_to(monitored_folder_path)
+            except ValueError:
+                relative_target_path = target_file_path
 
             if dry_run:
                 action_taken_str = ("SIMULATED_" + action).upper()
