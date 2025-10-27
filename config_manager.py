@@ -32,7 +32,8 @@ class ConfigManager:
                 'schedule_type': 'interval',  # Default schedule type
                 'interval_minutes': 60,  # Default interval in minutes
                 'dry_run_mode': False,  # Default dry run mode
-                'notification_level': DEFAULT_NOTIFICATION_LEVEL # New setting
+                'notification_level': DEFAULT_NOTIFICATION_LEVEL, # New setting
+                'hide_instructions': False,
             }
         }
         self.config = self._load_config()
