@@ -172,7 +172,7 @@ class ConfigWindow(QWidget):
         self.undo_manager = UndoManager(self.config_manager) # Instantiate UndoManager
         self.monitoring_worker: MonitoringWorker | None = None
         self.worker_status = "Stopped" # Track worker status
-        self._log_entries: list[tuple[datetime, str, str]] = []
+        self._log_entries: list[tuple[str, str]] = []
         self._action_chip_cache: dict[str, QPixmap | None] = {}
         self._supports_action_pixmaps = hasattr(QPixmap, "fill") and callable(getattr(QPixmap, "fill", None))
 
@@ -475,15 +475,6 @@ class ConfigWindow(QWidget):
         self.log_filter_combo.setToolTip("Filter log messages by severity")
         log_header_layout.addWidget(self.log_filter_combo)
 
-        self.log_search_edit = QLineEdit()
-        if hasattr(self.log_search_edit, "setPlaceholderText"):
-            self.log_search_edit.setPlaceholderText("Search logs…")
-        if hasattr(self.log_search_edit, "setClearButtonEnabled"):
-            self.log_search_edit.setClearButtonEnabled(True)
-        if hasattr(self.log_search_edit, "setToolTip"):
-            self.log_search_edit.setToolTip("Filter log messages by keyword")
-        log_header_layout.addWidget(self.log_search_edit)
-
         logs_layout.addLayout(log_header_layout)
 
         self.log_view = QTextEdit()
@@ -534,8 +525,6 @@ class ConfigWindow(QWidget):
         self.copy_logs_button.clicked.connect(self.copy_logs_to_clipboard)
         self.save_logs_button.clicked.connect(self.export_logs)
         self.log_filter_combo.currentTextChanged.connect(self._on_log_filter_changed)
-        if hasattr(self.log_search_edit, "textChanged"):
-            self.log_search_edit.textChanged.connect(self._on_log_search_changed)
 
         self._update_ui_for_status_and_mode() # Initial UI update
         self._set_initial_focus() # Set initial focus
@@ -579,10 +568,8 @@ class ConfigWindow(QWidget):
 
         try:
             with open(file_path, "w", encoding="utf-8") as handle:
-                for timestamp, severity, message in self._log_entries:
-                    handle.write(
-                        f"{timestamp.strftime('%Y-%m-%d %H:%M:%S')}\t{severity.upper()}\t{self._strip_message_prefix(severity, message)}\n"
-                    )
+                for _, message in self._log_entries:
+                    handle.write(f"{message}\n")
         except OSError as exc:
             QMessageBox.critical(self, "Save Logs", f"Could not save logs to '{file_path}': {exc}")
 
@@ -591,59 +578,31 @@ class ConfigWindow(QWidget):
         """Refresh the log view when the filter changes."""
         self._refresh_log_view()
 
-    @pyqtSlot(str)
-    def _on_log_search_changed(self, _text: str):
-        """Refresh the log view when the search keyword changes."""
-        self._refresh_log_view()
-
     def _refresh_log_view(self):
         """Rebuild the visible log view based on the current filter."""
         self.log_view.clear()
-        keyword = ""
-        if hasattr(self, "log_search_edit") and hasattr(self.log_search_edit, "text"):
-            keyword = (self.log_search_edit.text() or "").strip().lower()
-        for timestamp, severity, message in self._log_entries:
-            if not self._log_filter_allows(severity):
-                continue
-            search_target = f"{severity} {message}".lower()
-            if keyword and keyword not in search_target:
-                continue
-            self.log_view.append(self._format_log_message(timestamp, severity, message))
+        for severity, message in self._log_entries:
+            if self._log_filter_allows(severity):
+                self.log_view.append(self._format_log_message(severity, message))
         self._scroll_log_to_bottom()
 
     def _append_log_entry(self, severity: str, message: str):
         """Store and append a log entry respecting the active filter."""
-        timestamp = datetime.now()
-        entry = (timestamp, severity, message)
-        self._log_entries.append(entry)
+        self._log_entries.append((severity, message))
         if self._log_filter_allows(severity):
-            keyword = ""
-            if hasattr(self, "log_search_edit") and hasattr(self.log_search_edit, "text"):
-                keyword = (self.log_search_edit.text() or "").strip().lower()
-            search_target = f"{severity} {message}".lower()
-            if not keyword or keyword in search_target:
-                self.log_view.append(self._format_log_message(timestamp, severity, message))
+            self.log_view.append(self._format_log_message(severity, message))
             self._scroll_log_to_bottom()
 
     def _log_filter_allows(self, severity: str) -> bool:
         selected = (self.log_filter_combo.currentText() or "All").upper()
         return selected == "ALL" or selected == severity.upper()
 
-    def _format_log_message(self, timestamp: datetime, severity: str, message: str) -> str:
-        ts_text = timestamp.strftime("%Y-%m-%d %H:%M:%S")
+    def _format_log_message(self, severity: str, message: str) -> str:
         upper_severity = severity.upper()
-        clean_message = self._strip_message_prefix(upper_severity, message)
-        formatted = f"[{ts_text}] {upper_severity} {clean_message}"
         if upper_severity == "ERROR":
-            return f'<font color="red">{formatted}</font>'
+            return f'<font color="red">{message}</font>'
         if upper_severity == "WARNING":
-            return f'<font color="orange">{formatted}</font>'
-        return formatted
-
-    def _strip_message_prefix(self, severity: str, message: str) -> str:
-        prefix = f"{severity.upper()}:"
-        if message.upper().startswith(prefix):
-            return message[len(prefix):].lstrip()
+            return f'<font color="orange">{message}</font>'
         return message
 
     def _scroll_log_to_bottom(self):
