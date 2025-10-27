@@ -1,7 +1,7 @@
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QCheckBox, QDialogButtonBox,
     QWidget, QMessageBox, QLabel, QSpinBox, QLineEdit, QComboBox, QGroupBox,
-    QFormLayout
+    QFormLayout, QPushButton
 )
 from PyQt6.QtGui import QKeySequence # Added for shortcuts
 from PyQt6.QtCore import pyqtSlot, Qt # Added Qt
@@ -227,8 +227,14 @@ class SettingsDialog(QDialog):
             cancel_button.setText("&Cancel") # Added &
             cancel_button.setToolTip("Discard changes and close (Esc)")
 
+        restore_defaults_button = QPushButton("Restore Defaults")
+        restore_defaults_button.setToolTip("Revert all settings to their default values.")
+        restore_defaults_button.setAutoDefault(False)
+        button_box.addButton(restore_defaults_button, QDialogButtonBox.ButtonRole.ResetRole)
+
         button_box.accepted.connect(self.accept) # Connect OK to accept()
         button_box.rejected.connect(self.reject) # Connect Cancel to reject()
+        restore_defaults_button.clicked.connect(self._restore_defaults)
         layout.addWidget(button_box)
 
         # Ensure tab order flows naturally through grouped controls
@@ -354,3 +360,24 @@ class SettingsDialog(QDialog):
         super().accept() # Close the dialog with QDialog.Accepted status
 
     # reject() is handled automatically by QDialogButtonBox connection
+
+    def _restore_defaults(self):
+        """Restore the dialog controls to their baseline default values."""
+        default_settings = self.config_manager.default_config.get('settings', {})
+
+        if self._autostart_supported:
+            self.autostart_checkbox.setChecked(default_settings.get('start_on_login', False))
+        else:
+            # Keep disabled autostart checkbox unchecked when unsupported
+            self.autostart_checkbox.setChecked(False)
+
+        self.dryRunModeCheckbox.setChecked(default_settings.get('dry_run_mode', False))
+        self.intervalMinutesSpinBox.setValue(default_settings.get('interval_minutes', 60))
+        self.archivePathTemplateInput.setText(default_settings.get('archive_path_template', ''))
+
+        default_notification_level = default_settings.get('notification_level', DEFAULT_NOTIFICATION_LEVEL)
+        level_index = self.notificationLevelComboBox.findData(default_notification_level)
+        if level_index != -1:
+            self.notificationLevelComboBox.setCurrentIndex(level_index)
+
+        self.autostart_checkbox.setFocus()
