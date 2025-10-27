@@ -1,7 +1,7 @@
 import sys
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QListWidget, QPushButton, QLabel, QTextEdit,
-    QMessageBox, QTableWidget, QTableWidgetItem, QHeaderView, QApplication
+    QMessageBox, QTableWidget, QTableWidgetItem, QHeaderView, QApplication, QStackedWidget
 )
 from PyQt6.QtGui import QKeySequence, QAction # Added QAction
 from PyQt6.QtCore import Qt, pyqtSlot, QVariant # QVariant might be needed for custom data
@@ -32,6 +32,12 @@ class UndoDialog(QDialog):
         right_panel_layout = QVBoxLayout() # For actions list
 
         # --- UI Elements ---
+        workflow_label = QLabel(
+            "Workflow: 1) Refresh the run list. 2) Select a batch. 3) Choose an undo action."
+        )
+        workflow_label.setWordWrap(True)
+        main_layout.addWidget(workflow_label)
+
         self.refresh_button = QPushButton("Refresh Run List")
 
         # Runs Table
@@ -49,8 +55,18 @@ class UndoDialog(QDialog):
 
 
         left_panel_layout.addWidget(QLabel("Available Batches/Runs:"))
+        self.runs_placeholder = QLabel(
+            "No runs available yet. Click 'Refresh Run List' to load your undo history."
+        )
+        self.runs_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.runs_placeholder.setWordWrap(True)
+
+        self.runs_stack = QStackedWidget()
+        self.runs_stack.addWidget(self.runs_placeholder)
+        self.runs_stack.addWidget(self.runs_table)
+
         left_panel_layout.addWidget(self.refresh_button)
-        left_panel_layout.addWidget(self.runs_table)
+        left_panel_layout.addWidget(self.runs_stack)
 
         # Actions Table
         self.actions_table = QTableWidget()
@@ -65,7 +81,17 @@ class UndoDialog(QDialog):
         self.actions_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
 
         right_panel_layout.addWidget(QLabel("Actions in Selected Batch:"))
-        right_panel_layout.addWidget(self.actions_table)
+        self.actions_placeholder = QLabel(
+            "Select a batch to review its actions, then choose an undo option."
+        )
+        self.actions_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.actions_placeholder.setWordWrap(True)
+
+        self.actions_stack = QStackedWidget()
+        self.actions_stack.addWidget(self.actions_placeholder)
+        self.actions_stack.addWidget(self.actions_table)
+
+        right_panel_layout.addWidget(self.actions_stack)
 
         top_layout.addLayout(left_panel_layout, 1) # Assign stretch factor
         top_layout.addLayout(right_panel_layout, 2) # Assign stretch factor
@@ -82,6 +108,10 @@ class UndoDialog(QDialog):
         self.status_log.setReadOnly(True)
         main_layout.addWidget(QLabel("Log:"))
         main_layout.addWidget(self.status_log)
+
+        self.footer_status_label = QLabel("Last refresh: Not yet performed")
+        self.footer_status_label.setAlignment(Qt.AlignmentFlag.AlignRight)
+        main_layout.addWidget(self.footer_status_label)
 
         # Add tooltips and mnemonics
         self.refresh_button.setText("&Refresh Run List")
@@ -138,18 +168,30 @@ class UndoDialog(QDialog):
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self.status_log.append(f"[{timestamp}] {message}")
 
+    def _update_last_refresh_status(self, message):
+        self.footer_status_label.setText(message)
+
     @pyqtSlot()
     def populate_runs_list(self):
+        refresh_started = datetime.now()
         self._log_message("Refreshing runs list...")
+        self._update_last_refresh_status(
+            f"Refreshing runs list... ({refresh_started.strftime('%Y-%m-%d %H:%M:%S')})"
+        )
         self.runs_table.setRowCount(0) # Clear table
         self.actions_table.setRowCount(0) # Clear actions table
         self.undo_batch_button.setEnabled(False)
         self.undo_selected_action_button.setEnabled(False)
+        self.runs_stack.setCurrentWidget(self.runs_placeholder)
+        self.actions_stack.setCurrentWidget(self.actions_placeholder)
 
         try:
             runs = self.undo_manager.get_history_runs()
             if not runs:
                 self._log_message("No history runs found.")
+                self._update_last_refresh_status(
+                    f"Last refresh {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} – no runs found"
+                )
                 return
 
             self.runs_table.setRowCount(len(runs))
@@ -177,14 +219,22 @@ class UndoDialog(QDialog):
                 self.runs_table.setItem(row_idx, 2, item_run_id) # Hidden
 
             self._log_message(f"Found {len(runs)} runs.")
+            self.runs_stack.setCurrentWidget(self.runs_table)
+            self._update_last_refresh_status(
+                f"Last refresh {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} – {len(runs)} run(s) available"
+            )
         except Exception as e:
             self._log_message(f"Error populating runs list: {e}")
             QMessageBox.critical(self, "Error", f"Could not load history runs: {e}")
+            self._update_last_refresh_status(
+                f"Last refresh failed at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+            )
 
     @pyqtSlot()
     def on_run_selected(self):
         self.actions_table.setRowCount(0) # Clear previous actions
         self.undo_selected_action_button.setEnabled(False)
+        self.actions_stack.setCurrentWidget(self.actions_placeholder)
 
         selected_items = self.runs_table.selectedItems()
         if not selected_items:
@@ -214,6 +264,7 @@ class UndoDialog(QDialog):
             actions = self.undo_manager.get_run_actions(run_id)
             if not actions:
                 self._log_message(f"No actions found for run_id: {run_id}")
+                self.actions_stack.setCurrentWidget(self.actions_placeholder)
                 return
 
             self.actions_table.setRowCount(len(actions))
@@ -239,9 +290,11 @@ class UndoDialog(QDialog):
                 self.actions_table.setItem(row_idx, 3, QTableWidgetItem(formatted_time))
 
             self._log_message(f"Displayed {len(actions)} actions for run {run_id}.")
+            self.actions_stack.setCurrentWidget(self.actions_table)
         except Exception as e:
             self._log_message(f"Error fetching or displaying actions for run {run_id}: {e}")
             QMessageBox.critical(self, "Error", f"Could not load actions for run {run_id}: {e}")
+            self.actions_stack.setCurrentWidget(self.actions_placeholder)
 
 
     @pyqtSlot()
