@@ -124,11 +124,11 @@ class UndoDialog(QDialog):
         elif event.key() == Qt.Key.Key_F5:
             self.populate_runs_list()
         # Ctrl+B for batch undo if button is enabled
-        elif event.matches(QKeySequence("Ctrl+B")):
+        elif (event.modifiers() & Qt.KeyboardModifier.ControlModifier) and event.key() == Qt.Key.Key_B:
             if self.undo_batch_button.isEnabled():
                 self.handle_undo_batch()
         # Ctrl+U for single undo if button is enabled
-        elif event.matches(QKeySequence("Ctrl+U")):
+        elif (event.modifiers() & Qt.KeyboardModifier.ControlModifier) and event.key() == Qt.Key.Key_U:
             if self.undo_selected_action_button.isEnabled():
                 self.handle_undo_selected_action()
         else:
