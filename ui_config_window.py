@@ -9,7 +9,7 @@ try:
     from PyQt6.QtWidgets import (
         QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QListWidget, QLineEdit,
         QSpinBox, QLabel, QTextEdit, QFileDialog, QMessageBox, QListWidgetItem, QComboBox, QCheckBox,
-        QApplication, QMenu, QInputDialog, QGroupBox, QFormLayout
+        QApplication, QMenu, QInputDialog, QGroupBox, QFormLayout, QStackedLayout
     )
 except ImportError:  # pragma: no cover - fallback for test environments with stubs
     from PyQt6 import QtWidgets as _QtWidgets  # type: ignore
@@ -33,6 +33,7 @@ except ImportError:  # pragma: no cover - fallback for test environments with st
     QInputDialog = getattr(_QtWidgets, "QInputDialog", object)
     QGroupBox = getattr(_QtWidgets, "QGroupBox", type("QGroupBox", (QWidget,), {}))
     QFormLayout = getattr(_QtWidgets, "QFormLayout", object)
+    QStackedLayout = getattr(_QtWidgets, "QStackedLayout", object)
 
 try:
     from PyQt6.QtGui import QDesktopServices, QKeySequence, QAction # Import QAction
@@ -205,13 +206,25 @@ class ConfigWindow(QWidget):
         top_controls_layout.addWidget(self.settings_button)
         main_layout.addLayout(top_controls_layout)
 
-        # --- Folder List ---
-        main_layout.addWidget(QLabel("Monitored Folders:"))
-        self.folder_list_widget = QListWidget()
-        main_layout.addWidget(self.folder_list_widget)
+        # --- Folder and Rule Area ---
+        self.rule_area_container = QWidget()
+        self.rule_area_layout = QStackedLayout(self.rule_area_container)
+        self.rule_area_layout.setContentsMargins(0, 0, 0, 0)
+        try:
+            self.rule_area_layout.setStackingMode(QStackedLayout.StackingMode.StackAll)
+        except AttributeError:
+            pass  # Some Qt stubs may not expose stacking mode
 
-        # --- Rule Editor ---
-        main_layout.addWidget(QLabel("Rules for selected folder:"))
+        self.rule_controls_widget = QWidget()
+        rule_controls_layout = QVBoxLayout(self.rule_controls_widget)
+        rule_controls_layout.setContentsMargins(0, 0, 0, 0)
+        rule_controls_layout.setSpacing(6)
+
+        rule_controls_layout.addWidget(QLabel("Monitored Folders:"))
+        self.folder_list_widget = QListWidget()
+        rule_controls_layout.addWidget(self.folder_list_widget)
+
+        rule_controls_layout.addWidget(QLabel("Rules for selected folder:"))
 
         rule_groups_layout = QHBoxLayout()
 
@@ -289,7 +302,7 @@ class ConfigWindow(QWidget):
 
         rule_groups_layout.addWidget(match_group)
         rule_groups_layout.addWidget(action_group)
-        main_layout.addLayout(rule_groups_layout)
+        rule_controls_layout.addLayout(rule_groups_layout)
 
         # --- Exclusion Rules Editor ---
         exclusion_layout = QHBoxLayout()
@@ -316,7 +329,42 @@ class ConfigWindow(QWidget):
         exclusion_editor_layout.addLayout(exclusion_buttons_layout)
 
         exclusion_layout.addLayout(exclusion_editor_layout)
-        main_layout.addLayout(exclusion_layout)
+        rule_controls_layout.addLayout(exclusion_layout)
+
+        self.rule_area_layout.addWidget(self.rule_controls_widget)
+
+        placeholder_wrapper = QWidget()
+        try:
+            placeholder_wrapper.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        except AttributeError:
+            pass
+        placeholder_layout = QVBoxLayout(placeholder_wrapper)
+        placeholder_layout.setContentsMargins(24, 24, 24, 24)
+        placeholder_layout.addStretch()
+        self.rule_placeholder_label = QLabel(
+            (
+                "<b>The rule controls snooze until a folder is selected.</b><br/>"
+                "Add a folder with <em>Add Folder</em> above, then pick it to tailor its cleanup rule."
+            )
+        )
+        self.rule_placeholder_label.setWordWrap(True)
+        placeholder_alignment = getattr(Qt.AlignmentFlag, "AlignCenter", Qt.AlignmentFlag.AlignTop)
+        self.rule_placeholder_label.setAlignment(placeholder_alignment)
+        self.rule_placeholder_label.setStyleSheet(
+            "color: #495057; background-color: rgba(255, 255, 255, 232); border: 1px dashed #ced4da; "
+            "border-radius: 8px; padding: 24px;"
+        )
+        try:
+            self.rule_placeholder_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        except AttributeError:
+            pass
+        placeholder_layout.addWidget(self.rule_placeholder_label, 0, placeholder_alignment)
+        placeholder_layout.addStretch()
+        self.rule_area_layout.addWidget(placeholder_wrapper)
+        self._placeholder_overlay = placeholder_wrapper
+        self._placeholder_overlay.hide()
+
+        main_layout.addWidget(self.rule_area_container)
 
         # --- Status and Logs ---
         status_layout = QHBoxLayout()
@@ -428,6 +476,7 @@ class ConfigWindow(QWidget):
         self._update_ui_for_status_and_mode() # Initial UI update
         self._set_initial_focus() # Set initial focus
         self._apply_instruction_visibility()
+        self._update_placeholder_visibility()
 
     def _set_initial_focus(self):
         """Sets the initial focus to a sensible widget."""
@@ -536,6 +585,16 @@ class ConfigWindow(QWidget):
         should_show = not self.config_manager.get_setting("hide_instructions", False)
         self.instructions_container.setVisible(should_show)
 
+    def _update_placeholder_visibility(self):
+        """Toggle the placeholder overlay based on folder availability and selection."""
+        overlay = getattr(self, "_placeholder_overlay", None)
+        if overlay is None:
+            return
+
+        has_items = self.folder_list_widget.count() > 0
+        has_selection = self.folder_list_widget.currentItem() is not None
+        overlay.setVisible(not has_items or not has_selection)
+
     def _hide_instructions_permanently(self):
         """Hide the instructions widget and remember the user's choice."""
         self.config_manager.set_setting("hide_instructions", True)
@@ -582,6 +641,11 @@ class ConfigWindow(QWidget):
                 list_item = QListWidgetItem(path)
                 self.folder_list_widget.addItem(list_item)
 
+        if self.folder_list_widget.count() > 0:
+            self.folder_list_widget.setCurrentRow(0)
+
+        self._update_placeholder_visibility()
+
     def _setup_log_timer(self):
         """Set up the QTimer to check the log queue."""
         self.log_timer = QTimer(self)
@@ -599,6 +663,7 @@ class ConfigWindow(QWidget):
                 self.folder_list_widget.addItem(list_item)
                 self.folder_list_widget.setCurrentItem(list_item) # Select the new item
                 self.log_queue.put(f"INFO: Added folder: {dir_path}")
+                self._update_placeholder_visibility()
             else:
                  QMessageBox.warning(self, "Folder Exists", f"The folder '{dir_path}' is already being monitored.")
 
@@ -618,6 +683,9 @@ class ConfigWindow(QWidget):
                     row = self.folder_list_widget.row(current_item)
                     self.folder_list_widget.takeItem(row)
                     self.log_queue.put(f"INFO: Removed folder: {path}")
+                    if self.folder_list_widget.count() > 0:
+                        new_row = min(row, self.folder_list_widget.count() - 1)
+                        self.folder_list_widget.setCurrentRow(new_row)
                     # Clear/disable inputs if no item is selected
                     if self.folder_list_widget.count() == 0:
                          self.age_spinbox.setEnabled(False)
@@ -638,7 +706,8 @@ class ConfigWindow(QWidget):
                          self.remove_exclusion_button.setEnabled(False)
                          self.exclusion_help_button.setEnabled(False) # Disable help button
                          # Explicitly call update_rule_inputs with None when list is empty
-                         self.update_rule_inputs(None, None) 
+                         self.update_rule_inputs(None, None)
+                    self._update_placeholder_visibility()
                 else:
                      QMessageBox.warning(self, "Error", f"Could not remove folder '{path}' from configuration.")
         else:
@@ -647,6 +716,7 @@ class ConfigWindow(QWidget):
     @pyqtSlot(QListWidgetItem, QListWidgetItem)
     def update_rule_inputs(self, current: QListWidgetItem | None, previous: QListWidgetItem | None): # Allow None
         """Update rule input fields when folder selection changes."""
+        self._update_placeholder_visibility()
         if current:
             path = current.text()
             rule = self.config_manager.get_folder_rule(path)
@@ -758,6 +828,7 @@ class ConfigWindow(QWidget):
             self.remove_exclusion_button.setEnabled(False)
             self.exclusion_help_button.setEnabled(False) # Disable help button
             self._update_destination_enabled_state(base_enabled=False)
+        self._update_placeholder_visibility()
 
     def _update_destination_enabled_state(self, base_enabled: bool | None = None):
         """Enable destination controls when editing is allowed and action supports it."""
