@@ -110,6 +110,11 @@ class ConfigWindow(QWidget):
         self.actionComboBox.setToolTip("Action to perform on matching files.")
         rule_layout.addWidget(self.actionComboBox)
 
+        self.enabledCheckbox = QCheckBox("Rule Enabled")
+        self.enabledCheckbox.setEnabled(False)
+        self.enabledCheckbox.setToolTip("Temporarily disable this rule without removing it.")
+        rule_layout.addWidget(self.enabledCheckbox)
+
         main_layout.addLayout(rule_layout)
 
         # --- Exclusion Rules Editor ---
@@ -168,6 +173,7 @@ class ConfigWindow(QWidget):
         self.useRegexCheckbox.stateChanged.connect(self.save_rule_changes) # Connect checkbox
         self.rule_logic_combo.currentIndexChanged.connect(self.save_rule_changes) # Connect new combo box
         self.actionComboBox.currentIndexChanged.connect(self.save_rule_changes) # Connect action combo box
+        self.enabledCheckbox.stateChanged.connect(self.save_rule_changes)
         # self.apply_template_button.clicked.connect(self.apply_template) # Will be handled by QMenu
         self.start_button.clicked.connect(self.start_monitoring)
         self.stop_button.clicked.connect(self.stop_monitoring)
@@ -275,11 +281,13 @@ class ConfigWindow(QWidget):
                          self.rule_logic_combo.setEnabled(False) # Disable logic combo
                          self.useRegexCheckbox.setEnabled(False) # Disable regex checkbox
                          self.actionComboBox.setEnabled(False) # Disable action combo box
+                         self.enabledCheckbox.setEnabled(False)
                          self.age_spinbox.setValue(0)
                          self.pattern_lineedit.clear()
                          self.useRegexCheckbox.setChecked(False) # Uncheck regex checkbox
                          self.rule_logic_combo.setCurrentIndex(0) # Reset logic combo
                          self.actionComboBox.setCurrentIndex(0) # Reset action combo box
+                         self.enabledCheckbox.setChecked(False)
                          self.exclusion_list_widget.clear() # Clear exclusions
                          self.exclusion_list_widget.setEnabled(False)
                          self.add_exclusion_button.setEnabled(False)
@@ -305,6 +313,7 @@ class ConfigWindow(QWidget):
                 self.rule_logic_combo.blockSignals(True)
                 self.useRegexCheckbox.blockSignals(True)
                 self.actionComboBox.blockSignals(True) # Block actionComboBox signals
+                self.enabledCheckbox.blockSignals(True)
                 self.exclusion_list_widget.blockSignals(True) # Block exclusion list signals
 
                 self.age_spinbox.setValue(rule.get('age_days', 0))
@@ -321,6 +330,8 @@ class ConfigWindow(QWidget):
                 }
                 self.actionComboBox.setCurrentText(action_display_map.get(action_value, "Move"))
 
+                self.enabledCheckbox.setChecked(rule.get('enabled', True))
+
                 self.exclusion_list_widget.clear()
                 exclusions = rule.get('exclusions', [])
                 for exclusion_pattern in exclusions:
@@ -333,6 +344,7 @@ class ConfigWindow(QWidget):
                 self.rule_logic_combo.setEnabled(True)
                 self.useRegexCheckbox.setEnabled(True) # Enable checkbox
                 self.actionComboBox.setEnabled(True) # Enable actionComboBox
+                self.enabledCheckbox.setEnabled(True)
                 self.exclusion_list_widget.setEnabled(True)
                 self.add_exclusion_button.setEnabled(True)
                 self.remove_exclusion_button.setEnabled(True)
@@ -344,6 +356,7 @@ class ConfigWindow(QWidget):
                 self.rule_logic_combo.blockSignals(False)
                 self.useRegexCheckbox.blockSignals(False)
                 self.actionComboBox.blockSignals(False) # Unblock actionComboBox signals
+                self.enabledCheckbox.blockSignals(False)
                 self.exclusion_list_widget.blockSignals(False) # Unblock exclusion list signals
             else:
                 # Should not happen if list is synced with config, but handle defensively
@@ -352,11 +365,13 @@ class ConfigWindow(QWidget):
                 self.rule_logic_combo.setEnabled(False)
                 self.useRegexCheckbox.setEnabled(False) # Disable checkbox
                 self.actionComboBox.setEnabled(False) # Disable actionComboBox
+                self.enabledCheckbox.setEnabled(False)
                 self.age_spinbox.setValue(0)
                 self.pattern_lineedit.clear()
                 self.rule_logic_combo.setCurrentIndex(0)
                 self.useRegexCheckbox.setChecked(False) # Uncheck checkbox
                 self.actionComboBox.setCurrentIndex(0) # Reset actionComboBox
+                self.enabledCheckbox.setChecked(False)
                 self.exclusion_list_widget.clear() # Clear exclusions
                 self.exclusion_list_widget.setEnabled(False)
                 self.add_exclusion_button.setEnabled(False)
@@ -369,11 +384,13 @@ class ConfigWindow(QWidget):
             self.rule_logic_combo.setEnabled(False)
             self.useRegexCheckbox.setEnabled(False) # Disable checkbox
             self.actionComboBox.setEnabled(False) # Disable actionComboBox
+            self.enabledCheckbox.setEnabled(False)
             self.age_spinbox.setValue(0)
             self.pattern_lineedit.clear()
             self.rule_logic_combo.setCurrentIndex(0)
             self.useRegexCheckbox.setChecked(False)
             self.actionComboBox.setCurrentIndex(0) # Reset actionComboBox
+            self.enabledCheckbox.setChecked(False)
             self.exclusion_list_widget.clear() # Clear exclusions
             self.exclusion_list_widget.setEnabled(False)
             self.add_exclusion_button.setEnabled(False)
@@ -426,6 +443,8 @@ class ConfigWindow(QWidget):
                 if item: # Add check for item existence
                     exclusions.append(item.text())
 
+            rule_enabled = self.enabledCheckbox.isChecked()
+
             if self.config_manager.update_folder_rule(
                 path,
                 age,
@@ -433,7 +452,8 @@ class ConfigWindow(QWidget):
                 rule_logic,
                 use_regex,
                 action_value,
-                exclusions # Pass exclusions
+                exclusions, # Pass exclusions
+                enabled=rule_enabled
             ):
                 self.log_queue.put(f"INFO: Updated rules for {path}")
             else:
@@ -480,6 +500,7 @@ class ConfigWindow(QWidget):
         self.rule_logic_combo.setEnabled(can_edit_rules)
         self.useRegexCheckbox.setEnabled(can_edit_rules)
         self.actionComboBox.setEnabled(can_edit_rules)
+        self.enabledCheckbox.setEnabled(can_edit_rules)
         self.exclusion_list_widget.setEnabled(can_edit_rules)
         self.add_exclusion_button.setEnabled(can_edit_rules)
         self.remove_exclusion_button.setEnabled(can_edit_rules)

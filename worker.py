@@ -51,6 +51,10 @@ class MonitoringWorker(threading.Thread):
                         break
 
                     path_str = folder_config.get('path')
+                    if not folder_config.get('enabled', True):
+                        display_path = path_str or "<unknown path>"
+                        self.log_queue.put(f"INFO: Skipping disabled rule for {display_path}.")
+                        continue
                     age_days = folder_config.get('age_days', 0)
                     pattern = folder_config.get('pattern', '*.*')
                     use_regex = folder_config.get('use_regex', False)
