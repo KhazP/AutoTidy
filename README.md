@@ -118,6 +118,25 @@ To run the application:
     * Here you can toggle "Start AutoTidy automatically on system login".
 
 ---
+
+### Exclusion Patterns
+
+Use exclusion patterns to keep AutoTidy from touching files or folders you want to protect. Add them per-rule in the
+configuration window.
+
+* **Wildcard (glob) examples**
+    * `*.tmp` – Skip leftover temporary files anywhere inside the watched folder.
+    * `cache/` – Ignore an entire subfolder named `cache` (include the trailing slash).
+    * `~$*.docx` – Exclude Office autosave files that start with `~$`.
+* **Regular expression examples** (enable the Regex toggle in a rule first)
+    * `^backup_\d{4}` – Ignore files whose names begin with `backup_` followed by four digits.
+    * `\.(log|bak)$` – Skip log or backup extensions when regex matching is enabled.
+* **How exclusions affect rule logic**
+    * Exclusions are checked before both the age and filename pattern parts of a rule.
+    * If a file matches any exclusion, AutoTidy leaves it alone even when other rule conditions match.
+    * Use folder-style exclusions (for example, `build/`) to prevent entire trees from being processed.
+
+---
 ## 🔧 Configuration
 
 Settings are managed via two main interfaces:

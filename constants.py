@@ -137,6 +137,29 @@ RULE_TEMPLATES = [
     }
 ]
 
+# Help and guidance content reused across dialogs
+EXCLUSION_HELP_CONTENT = {
+    "intro": (
+        "Exclusion patterns let you ignore files or folders before AutoTidy applies rule actions. "
+        "Use them to keep critical files safe or skip noisy directories."
+    ),
+    "glob_examples": [
+        ("*.tmp", "Skip leftover temporary files anywhere inside the watched folder."),
+        ("cache/", "Ignore an entire subfolder named 'cache' (include the trailing slash)."),
+        ("~$*.docx", "Exclude Office autosave files that start with '~$'."),
+    ],
+    "regex_examples": [
+        (r"^backup_\\d{4}", "Ignore files whose names begin with 'backup_' followed by four digits."),
+        (r"\\.(log|bak)$", "Skip log or backup extensions when regex matching is enabled."),
+    ],
+    "logic_notes": [
+        "Exclusions are checked before both the age and filename pattern parts of a rule.",
+        "If a file matches any exclusion, AutoTidy leaves it alone even when other rule conditions match.",
+        "Use folder-style exclusions (e.g., 'build/') to prevent entire trees from being processed.",
+    ],
+    "readme_anchor": "#exclusion-patterns",
+}
+
 # Logging related constants
 
 # Notification Levels
