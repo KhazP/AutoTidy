@@ -6,8 +6,8 @@ from PyQt6.QtWidgets import (
     QSpinBox, QLabel, QTextEdit, QFileDialog, QMessageBox, QListWidgetItem, QComboBox, QCheckBox,
     QApplication, QMenu, QInputDialog
 )
-from PyQt6.QtGui import QKeySequence, QAction # Import QAction
-from PyQt6.QtCore import QTimer, Qt, pyqtSlot
+from PyQt6.QtGui import QDesktopServices, QKeySequence, QAction # Import QAction
+from PyQt6.QtCore import QTimer, Qt, QUrl, pyqtSlot
 
 from config_manager import ConfigManager
 from worker import MonitoringWorker
@@ -56,6 +56,36 @@ class ConfigWindow(QWidget):
     def _init_ui(self):
         """Initialize UI elements and layout."""
         main_layout = QVBoxLayout(self)
+
+        # --- Quick Start Instructions ---
+        self.instructions_container = QWidget()
+        instructions_layout = QHBoxLayout(self.instructions_container)
+        instructions_layout.setContentsMargins(0, 0, 0, 0)
+        instructions_layout.setSpacing(12)
+
+        self.instructions_label = QLabel(
+            (
+                "<b>How to get started:</b><br/>"
+                "1. Add a folder you want AutoTidy to watch.<br/>"
+                "2. Adjust the folder's cleanup rule to fit your workflow.<br/>"
+                "3. Click <em>Start Monitoring</em> when you're ready.<br/>"
+                "<a href=\"readme\">Learn more in the README</a>"
+            )
+        )
+        self.instructions_label.setTextFormat(Qt.TextFormat.RichText)
+        self.instructions_label.setWordWrap(True)
+        self.instructions_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextBrowserInteraction
+        )
+        self.instructions_label.linkActivated.connect(self._on_instruction_link_activated)
+        instructions_layout.addWidget(self.instructions_label, 1)
+
+        self.dismiss_instructions_button = QPushButton("Hide Instructions")
+        self.dismiss_instructions_button.setToolTip("Hide these tips (they won't show again)")
+        self.dismiss_instructions_button.clicked.connect(self._hide_instructions_permanently)
+        instructions_layout.addWidget(self.dismiss_instructions_button, 0, Qt.AlignmentFlag.AlignTop)
+
+        main_layout.addWidget(self.instructions_container)
 
         # --- Top Controls ---
         top_controls_layout = QHBoxLayout()
@@ -217,6 +247,7 @@ class ConfigWindow(QWidget):
 
         self._update_ui_for_status_and_mode() # Initial UI update
         self._set_initial_focus() # Set initial focus
+        self._apply_instruction_visibility()
 
     def _set_initial_focus(self):
         """Sets the initial focus to a sensible widget."""
@@ -234,6 +265,23 @@ class ConfigWindow(QWidget):
         # Shortcut for closing/hiding the window
         close_shortcut = QKeySequence(Qt.Key.Key_Escape)
         self.addAction(self.create_action("Hide Window", self.close, close_shortcut))
+
+    def _apply_instruction_visibility(self):
+        """Show or hide the quick start instructions based on saved preference."""
+        should_show = not self.config_manager.get_setting("hide_instructions", False)
+        self.instructions_container.setVisible(should_show)
+
+    def _hide_instructions_permanently(self):
+        """Hide the instructions widget and remember the user's choice."""
+        self.config_manager.set_setting("hide_instructions", True)
+        self.config_manager.save_config()
+        self._apply_instruction_visibility()
+
+    def _on_instruction_link_activated(self, link: str):
+        """Handle help link clicks from the instructions area."""
+        if link == "readme":
+            readme_path = os.path.abspath("README.md")
+            QDesktopServices.openUrl(QUrl.fromLocalFile(readme_path))
 
     def create_action(self, text, slot, shortcut=None):
         """Helper to create a QAction for shortcuts not tied to a button."""
