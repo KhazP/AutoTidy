@@ -134,6 +134,7 @@ class ConfigWindow(QWidget):
         self.undo_manager = UndoManager(self.config_manager) # Instantiate UndoManager
         self.monitoring_worker: MonitoringWorker | None = None
         self.worker_status = "Stopped" # Track worker status
+        self._log_entries: list[tuple[str, str]] = []
 
         self.setWindowTitle("AutoTidy Configuration")
         self.setGeometry(200, 200, 600, 450) # x, y, width, height
@@ -354,10 +355,45 @@ class ConfigWindow(QWidget):
         status_layout.addWidget(self.stop_button)
         main_layout.addLayout(status_layout)
 
-        main_layout.addWidget(QLabel("Logs:"))
+        logs_container = QWidget()
+        logs_layout = QVBoxLayout(logs_container)
+        logs_layout.setContentsMargins(0, 0, 0, 0)
+        logs_layout.setSpacing(6)
+
+        log_header_layout = QHBoxLayout()
+        log_header_layout.setContentsMargins(0, 0, 0, 0)
+        log_header_layout.setSpacing(6)
+        log_header_layout.addWidget(QLabel("Logs:"))
+        log_header_layout.addStretch()
+
+        self.log_filter_combo = QComboBox()
+        self.log_filter_combo.addItems(["All", "Info", "Warning", "Error"])
+        self.log_filter_combo.setCurrentText("All")
+        self.log_filter_combo.setToolTip("Filter log messages by severity")
+        log_header_layout.addWidget(self.log_filter_combo)
+
+        logs_layout.addLayout(log_header_layout)
+
         self.log_view = QTextEdit()
         self.log_view.setReadOnly(True)
-        main_layout.addWidget(self.log_view)
+        logs_layout.addWidget(self.log_view)
+
+        log_actions_layout = QHBoxLayout()
+        log_actions_layout.setContentsMargins(0, 0, 0, 0)
+        log_actions_layout.setSpacing(6)
+        log_actions_layout.addStretch()
+
+        self.clear_logs_button = QPushButton("Clear")
+        self.copy_logs_button = QPushButton("Copy")
+        self.save_logs_button = QPushButton("Save…")
+
+        log_actions_layout.addWidget(self.clear_logs_button)
+        log_actions_layout.addWidget(self.copy_logs_button)
+        log_actions_layout.addWidget(self.save_logs_button)
+
+        logs_layout.addLayout(log_actions_layout)
+
+        main_layout.addWidget(logs_container)
 
         # --- Connect Signals ---
         self.add_folder_button.clicked.connect(self.add_folder)
@@ -382,6 +418,11 @@ class ConfigWindow(QWidget):
         self.exclusion_help_button.clicked.connect(self.show_exclusion_pattern_help) # Renamed for clarity
         self.exclusion_list_widget.itemChanged.connect(self.save_exclusion_list_changes) # Save when an item is edited
 
+        self.clear_logs_button.clicked.connect(self.clear_logs)
+        self.copy_logs_button.clicked.connect(self.copy_logs_to_clipboard)
+        self.save_logs_button.clicked.connect(self.export_logs)
+        self.log_filter_combo.currentTextChanged.connect(self._on_log_filter_changed)
+
         self._update_ui_for_status_and_mode() # Initial UI update
         self._set_initial_focus() # Set initial focus
         self._apply_instruction_visibility()
@@ -389,6 +430,91 @@ class ConfigWindow(QWidget):
     def _set_initial_focus(self):
         """Sets the initial focus to a sensible widget."""
         self.add_folder_button.setFocus()
+
+    @pyqtSlot()
+    def clear_logs(self):
+        """Clear the displayed logs and stored entries."""
+        self._log_entries.clear()
+        self.log_view.clear()
+
+    @pyqtSlot()
+    def copy_logs_to_clipboard(self):
+        """Copy the current log contents to the clipboard."""
+        clipboard = QApplication.clipboard()
+        if clipboard is not None:
+            clipboard.setText(self.log_view.toPlainText())
+
+    @pyqtSlot()
+    def export_logs(self):
+        """Export all stored logs to a file."""
+        default_name = f"autotidy-logs-{datetime.now().strftime('%Y%m%d-%H%M%S')}.txt"
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save Logs",
+            default_name,
+            "Text Files (*.txt);;All Files (*)",
+        )
+        if not file_path:
+            return
+
+        try:
+            with open(file_path, "w", encoding="utf-8") as handle:
+                for _, message in self._log_entries:
+                    handle.write(f"{message}\n")
+        except OSError as exc:
+            QMessageBox.critical(self, "Save Logs", f"Could not save logs to '{file_path}': {exc}")
+
+    @pyqtSlot(str)
+    def _on_log_filter_changed(self, _text: str):
+        """Refresh the log view when the filter changes."""
+        self._refresh_log_view()
+
+    def _refresh_log_view(self):
+        """Rebuild the visible log view based on the current filter."""
+        self.log_view.clear()
+        for severity, message in self._log_entries:
+            if self._log_filter_allows(severity):
+                self.log_view.append(self._format_log_message(severity, message))
+        self._scroll_log_to_bottom()
+
+    def _append_log_entry(self, severity: str, message: str):
+        """Store and append a log entry respecting the active filter."""
+        self._log_entries.append((severity, message))
+        if self._log_filter_allows(severity):
+            self.log_view.append(self._format_log_message(severity, message))
+            self._scroll_log_to_bottom()
+
+    def _log_filter_allows(self, severity: str) -> bool:
+        selected = (self.log_filter_combo.currentText() or "All").upper()
+        return selected == "ALL" or selected == severity.upper()
+
+    def _format_log_message(self, severity: str, message: str) -> str:
+        upper_severity = severity.upper()
+        if upper_severity == "ERROR":
+            return f'<font color="red">{message}</font>'
+        if upper_severity == "WARNING":
+            return f'<font color="orange">{message}</font>'
+        return message
+
+    def _scroll_log_to_bottom(self):
+        scroll_bar = getattr(self.log_view, "verticalScrollBar", None)
+        if callable(scroll_bar):
+            scroll_obj = scroll_bar()
+        else:
+            scroll_obj = None
+
+        if scroll_obj is not None:
+            scroll_obj.setValue(scroll_obj.maximum())
+
+    def _determine_log_severity(self, message: str) -> str:
+        normalized = message.strip().upper()
+        if normalized.startswith("ERROR:"):
+            return "ERROR"
+        if normalized.startswith("WARNING:") or normalized.startswith("WARN:"):
+            return "WARNING"
+        if normalized.startswith("STATUS:"):
+            return "INFO"
+        return "INFO"
 
     def _setup_shortcuts(self):
         """Setup keyboard shortcuts for common actions."""
@@ -1045,20 +1171,14 @@ class ConfigWindow(QWidget):
                     #          self.status_label.setText("Stopped (Unexpectedly)") # This part can be refined in _update_ui
 
 
-                elif isinstance(message, str) and message.startswith("ERROR:"):
-                    self.log_view.append(f'<font color="red">{message}</font>')
-                elif isinstance(message, str) and message.startswith("WARNING:"):
-                     self.log_view.append(f'<font color="orange">{message}</font>')
                 elif isinstance(message, str): # Ensure only strings are appended directly
-                    self.log_view.append(message)
+                    severity = self._determine_log_severity(message)
+                    # STATUS messages are handled above and should not be double logged
+                    if not message.startswith("STATUS:"):
+                        self._append_log_entry(severity, message)
                 else:
                     # Handle or log unexpected message types if necessary
                     print(f"DEBUG: Received unexpected message type in log queue: {type(message)}", file=sys.stderr)
-
-                # Auto-scroll to bottom
-                scroll_bar = self.log_view.verticalScrollBar()
-                if scroll_bar: # Add check to satisfy type checker and for safety
-                    scroll_bar.setValue(scroll_bar.maximum())
 
         except queue.Empty:
             # No messages left in the queue
