@@ -226,6 +226,11 @@ class ConfigWindow(QWidget):
 
         rule_controls_layout.addWidget(QLabel("Rules for selected folder:"))
 
+        self.rule_summary_label = QLabel("Select a monitored folder to see its rule.")
+        self.rule_summary_label.setStyleSheet("color: #6c757d; font-style: italic;")
+        self.rule_summary_label.setWordWrap(True)
+        rule_controls_layout.addWidget(self.rule_summary_label)
+
         rule_groups_layout = QHBoxLayout()
 
         match_group = QGroupBox("Match criteria")
@@ -609,6 +614,94 @@ class ConfigWindow(QWidget):
             # Some Qt stubs used in tests may not implement raise_; ignore failures there.
             pass
 
+    def _update_rule_summary(self):
+        """Update the textual summary of the currently selected rule."""
+        summary_label = getattr(self, "rule_summary_label", None)
+        if summary_label is None or not hasattr(summary_label, "setText"):
+            return
+
+        current_item = self.folder_list_widget.currentItem()
+        if current_item is None:
+            summary_label.setText(html.escape("Select a monitored folder to see its rule."))
+            return
+
+        path = current_item.text()
+        stripped_path = path.rstrip("/\\")
+        if stripped_path:
+            folder_name_candidate = stripped_path.split("/")[-1]
+            if "\\" in folder_name_candidate:
+                folder_name_candidate = folder_name_candidate.split("\\")[-1]
+            folder_name = folder_name_candidate or stripped_path
+        else:
+            folder_name = path
+        folder_name = folder_name or path
+
+        rule = self.config_manager.get_folder_rule(path) if hasattr(self, "config_manager") else None
+        if rule is None:
+            message = f"No saved rule found for {folder_name}."
+            summary_label.setText(html.escape(message))
+            return
+
+        if not self.enabledCheckbox.isChecked():
+            message = f"Rule for {folder_name} is disabled; matching files will be left untouched."
+            summary_label.setText(html.escape(message))
+            return
+
+        age_value = self.age_spinbox.value() if hasattr(self, "age_spinbox") else 0
+        pattern_raw = self.pattern_lineedit.text().strip() if hasattr(self, "pattern_lineedit") else ""
+        use_regex = self.useRegexCheckbox.isChecked() if hasattr(self, "useRegexCheckbox") else False
+        logic_value = (self.rule_logic_combo.currentText() if hasattr(self, "rule_logic_combo") else "OR").upper()
+        action_text = self.actionComboBox.currentText() if hasattr(self, "actionComboBox") else "Move"
+        action_value = ACTION_TEXT_TO_VALUE.get(action_text, action_text.lower())
+        destination_text = self.destination_lineedit.text().strip() if hasattr(self, "destination_lineedit") else ""
+
+        if age_value > 0:
+            age_phrase = f"at least {age_value} day{'s' if age_value != 1 else ''} old"
+        else:
+            age_phrase = ""
+
+        if use_regex:
+            if pattern_raw:
+                pattern_phrase = f"matching the regular expression “{pattern_raw}”"
+            else:
+                pattern_phrase = "matching an empty regular expression"
+        else:
+            pattern_value = pattern_raw or "*.*"
+            if pattern_value in {"*", "*.*"}:
+                pattern_phrase = ""
+            else:
+                pattern_phrase = f"matching the pattern “{pattern_value}”"
+
+        if age_phrase and pattern_phrase:
+            connector = " and " if logic_value == "AND" else " or "
+            condition_sentence = f"Files that are {age_phrase}{connector}{pattern_phrase}"
+        elif age_phrase:
+            condition_sentence = f"Files that are {age_phrase}"
+        elif pattern_phrase:
+            condition_sentence = f"Files {pattern_phrase}"
+        else:
+            condition_sentence = "All files"
+
+        if action_value == "move":
+            if destination_text:
+                action_sentence = f"will be moved to “{destination_text}”."
+            else:
+                action_sentence = "will be moved using the default destination."
+        elif action_value == "copy":
+            if destination_text:
+                action_sentence = f"will be copied to “{destination_text}”."
+            else:
+                action_sentence = "will be copied using the default destination."
+        elif action_value == "delete_to_trash":
+            action_sentence = "will be sent to the recycle bin."
+        elif action_value == "delete_permanently":
+            action_sentence = "will be permanently deleted."
+        else:
+            action_sentence = f"will perform the “{action_text}” action."
+
+        summary = f"{folder_name}: {condition_sentence} {action_sentence}"
+        summary_label.setText(html.escape(summary))
+
     def _hide_instructions_permanently(self):
         """Hide the instructions widget and remember the user's choice."""
         self.config_manager.set_setting("hide_instructions", True)
@@ -843,6 +936,7 @@ class ConfigWindow(QWidget):
             self.exclusion_help_button.setEnabled(False) # Disable help button
             self._update_destination_enabled_state(base_enabled=False)
         self._update_placeholder_visibility()
+        self._update_rule_summary()
 
     def _update_destination_enabled_state(self, base_enabled: bool | None = None):
         """Enable destination controls when editing is allowed and action supports it."""
@@ -924,6 +1018,8 @@ class ConfigWindow(QWidget):
             else:
                 # Should not happen if item exists
                 self.log_queue.put(f"ERROR: Failed to update rules for {path} (not found in config?)")
+
+        self._update_rule_summary()
 
     @pyqtSlot()
     def browse_destination_folder(self):
