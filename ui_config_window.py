@@ -593,7 +593,21 @@ class ConfigWindow(QWidget):
 
         has_items = self.folder_list_widget.count() > 0
         has_selection = self.folder_list_widget.currentItem() is not None
-        overlay.setVisible(not has_items or not has_selection)
+        should_show = not has_items or not has_selection
+        overlay.setVisible(should_show)
+
+        # Ensure the visible widget is on top so the UI stays contextual.
+        # If the placeholder should be visible, raise it above the rule controls.
+        # Otherwise, bring the rule controls to the front so the folder list and inputs
+        # are fully visible (fixes the case where a semi-opaque overlay was drawn over controls).
+        try:
+            if should_show:
+                overlay.raise_()
+            else:
+                self.rule_controls_widget.raise_()
+        except Exception:
+            # Some Qt stubs used in tests may not implement raise_; ignore failures there.
+            pass
 
     def _hide_instructions_permanently(self):
         """Hide the instructions widget and remember the user's choice."""
