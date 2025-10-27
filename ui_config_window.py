@@ -2,13 +2,100 @@ import os
 import sys
 import queue
 import re
-from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QListWidget, QLineEdit,
-    QSpinBox, QLabel, QTextEdit, QFileDialog, QMessageBox, QListWidgetItem, QComboBox, QCheckBox,
-    QApplication, QMenu, QInputDialog, QGroupBox, QFormLayout
-)
-from PyQt6.QtGui import QDesktopServices, QKeySequence, QAction # Import QAction
-from PyQt6.QtCore import QTimer, Qt, QUrl, pyqtSlot
+from datetime import datetime, timedelta
+
+try:
+    from PyQt6.QtWidgets import (
+        QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QListWidget, QLineEdit,
+        QSpinBox, QLabel, QTextEdit, QFileDialog, QMessageBox, QListWidgetItem, QComboBox, QCheckBox,
+        QApplication, QMenu, QInputDialog, QGroupBox, QFormLayout
+    )
+except ImportError:  # pragma: no cover - fallback for test environments with stubs
+    from PyQt6 import QtWidgets as _QtWidgets  # type: ignore
+
+    QWidget = getattr(_QtWidgets, "QWidget", object)
+    QVBoxLayout = getattr(_QtWidgets, "QVBoxLayout", object)
+    QHBoxLayout = getattr(_QtWidgets, "QHBoxLayout", object)
+    QPushButton = getattr(_QtWidgets, "QPushButton", object)
+    QListWidget = getattr(_QtWidgets, "QListWidget", object)
+    QLineEdit = getattr(_QtWidgets, "QLineEdit", object)
+    QSpinBox = getattr(_QtWidgets, "QSpinBox", object)
+    QLabel = getattr(_QtWidgets, "QLabel", object)
+    QTextEdit = getattr(_QtWidgets, "QTextEdit", object)
+    QFileDialog = getattr(_QtWidgets, "QFileDialog", object)
+    QMessageBox = getattr(_QtWidgets, "QMessageBox", object)
+    QListWidgetItem = getattr(_QtWidgets, "QListWidgetItem", object)
+    QComboBox = getattr(_QtWidgets, "QComboBox", object)
+    QCheckBox = getattr(_QtWidgets, "QCheckBox", object)
+    QApplication = getattr(_QtWidgets, "QApplication", object)
+    QMenu = getattr(_QtWidgets, "QMenu", object)
+    QInputDialog = getattr(_QtWidgets, "QInputDialog", object)
+    QGroupBox = getattr(_QtWidgets, "QGroupBox", type("QGroupBox", (QWidget,), {}))
+    QFormLayout = getattr(_QtWidgets, "QFormLayout", object)
+
+try:
+    from PyQt6.QtGui import QDesktopServices, QKeySequence, QAction # Import QAction
+except ImportError:  # pragma: no cover - fallback for test environments with stubs
+    from PyQt6 import QtGui as _QtGui  # type: ignore
+
+    class _DesktopServicesFallback:
+        @staticmethod
+        def openUrl(*_args, **_kwargs):
+            return None
+
+    class _KeySequenceFallback:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+    class _ActionFallback:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+    QDesktopServices = getattr(_QtGui, "QDesktopServices", _DesktopServicesFallback)
+    QKeySequence = getattr(_QtGui, "QKeySequence", _KeySequenceFallback)
+    QAction = getattr(_QtGui, "QAction", _ActionFallback)
+
+try:
+    from PyQt6.QtCore import QTimer, Qt, QUrl, pyqtSlot
+except ImportError:  # pragma: no cover - fallback for test environments with stubs
+    from PyQt6 import QtCore as _QtCore  # type: ignore
+
+    class _QtFallback:
+        class TextFormat:
+            RichText = 0
+
+        class TextInteractionFlag:
+            TextBrowserInteraction = 0
+            NoTextInteraction = 0
+
+        class AlignmentFlag:
+            AlignTop = 0
+
+        class ShortcutContext:
+            WindowShortcut = 0
+
+        class Key:
+            Key_Delete = 0
+            Key_Escape = 0
+
+        class ItemFlag:
+            ItemIsEditable = 0
+
+    def _pyqt_slot_fallback(*_args, **_kwargs):
+        def decorator(func):
+            return func
+
+        return decorator
+
+    class _QUrlFallback:
+        @staticmethod
+        def fromLocalFile(path):
+            return path
+
+    QTimer = getattr(_QtCore, "QTimer", object)
+    Qt = getattr(_QtCore, "Qt", _QtFallback)
+    QUrl = getattr(_QtCore, "QUrl", _QUrlFallback)
+    pyqtSlot = getattr(_QtCore, "pyqtSlot", _pyqt_slot_fallback)
 from pathlib import Path
 
 from config_manager import ConfigManager
@@ -231,8 +318,32 @@ class ConfigWindow(QWidget):
         # --- Status and Logs ---
         status_layout = QHBoxLayout()
         status_layout.addWidget(QLabel("Status:"))
+
+        status_value_container = QWidget()
+        status_value_layout = QVBoxLayout(status_value_container)
+        status_value_layout.setContentsMargins(0, 0, 0, 0)
+        status_value_layout.setSpacing(2)
+
+        status_line_layout = QHBoxLayout()
+        status_line_layout.setContentsMargins(0, 0, 0, 0)
+        status_line_layout.setSpacing(6)
+
+        self.status_indicator = QLabel()
+        self.status_indicator.setFixedSize(12, 12)
+        self.status_indicator.setStyleSheet("background-color: #6c757d; border-radius: 6px; border: 1px solid rgba(0, 0, 0, 0.2);")
+        status_line_layout.addWidget(self.status_indicator)
+
         self.status_label = QLabel("Stopped")
-        status_layout.addWidget(self.status_label)
+        status_line_layout.addWidget(self.status_label)
+
+        status_value_layout.addLayout(status_line_layout)
+
+        self.status_summary_label = QLabel("")
+        self.status_summary_label.setStyleSheet("color: #555555; font-size: 9pt;")
+        self.status_summary_label.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
+        status_value_layout.addWidget(self.status_summary_label)
+
+        status_layout.addWidget(status_value_container)
         status_layout.addStretch()
         self.start_button = QPushButton("&Start Monitoring") # Text will be updated, added &
         self.start_button.setToolTip("Start the monitoring or dry run process (Ctrl+S)")
@@ -449,7 +560,9 @@ class ConfigWindow(QWidget):
                 self.destination_lineedit.setEnabled(True)
                 self.destination_browse_button.setEnabled(True)
                 self.enabledCheckbox.setEnabled(True)
-                self.preview_rule_button.setEnabled(True)
+                preview_button = getattr(self, "preview_rule_button", None)
+                if preview_button is not None and hasattr(preview_button, "setEnabled"):
+                    preview_button.setEnabled(True)
                 self.exclusion_list_widget.setEnabled(True)
                 self.add_exclusion_button.setEnabled(True)
                 self.remove_exclusion_button.setEnabled(True)
@@ -475,7 +588,9 @@ class ConfigWindow(QWidget):
                 self.destination_lineedit.setEnabled(False)
                 self.destination_browse_button.setEnabled(False)
                 self.enabledCheckbox.setEnabled(False)
-                self.preview_rule_button.setEnabled(False)
+                preview_button = getattr(self, "preview_rule_button", None)
+                if preview_button is not None and hasattr(preview_button, "setEnabled"):
+                    preview_button.setEnabled(False)
                 self.age_spinbox.setValue(0)
                 self.pattern_lineedit.clear()
                 self.rule_logic_combo.setCurrentIndex(0)
@@ -499,7 +614,9 @@ class ConfigWindow(QWidget):
             self.destination_lineedit.setEnabled(False)
             self.destination_browse_button.setEnabled(False)
             self.enabledCheckbox.setEnabled(False)
-            self.preview_rule_button.setEnabled(False)
+            preview_button = getattr(self, "preview_rule_button", None)
+            if preview_button is not None and hasattr(preview_button, "setEnabled"):
+                preview_button.setEnabled(False)
             self.age_spinbox.setValue(0)
             self.pattern_lineedit.clear()
             self.rule_logic_combo.setCurrentIndex(0)
@@ -655,8 +772,67 @@ class ConfigWindow(QWidget):
         self.add_exclusion_button.setEnabled(can_edit_rules)
         self.remove_exclusion_button.setEnabled(can_edit_rules)
         self.exclusion_help_button.setEnabled(can_edit_rules) # Enable/disable help button
-        self.preview_rule_button.setEnabled(can_edit_rules)
+        preview_button = getattr(self, "preview_rule_button", None)
+        if preview_button is not None and hasattr(preview_button, "setEnabled"):
+            preview_button.setEnabled(can_edit_rules)
         self._update_destination_enabled_state(base_enabled=can_edit_rules)
+        self.update_status_summary()
+
+    def update_status_summary(self):
+        """Refresh the status indicator and summary text based on current configuration."""
+        status_text = self.worker_status or "Stopped"
+        normalized_status = status_text.lower()
+
+        if "error" in normalized_status:
+            indicator_color = "#dc3545"  # Red for error
+        elif "dry run" in normalized_status:
+            indicator_color = "#0d6efd"  # Blue for dry run
+        elif "running" in normalized_status:
+            indicator_color = "#28a745"  # Green for running
+        elif "stopped" in normalized_status:
+            indicator_color = "#6c757d"  # Grey for stopped
+        else:
+            indicator_color = "#6c757d"  # Default grey
+
+        status_indicator = getattr(self, "status_indicator", None)
+        if status_indicator is not None and hasattr(status_indicator, "setStyleSheet"):
+            status_indicator.setStyleSheet(
+                f"background-color: {indicator_color}; border-radius: 6px; border: 1px solid rgba(0, 0, 0, 0.2);"
+            )
+        status_label_widget = getattr(self, "status_label", None)
+        if status_label_widget is not None and hasattr(status_label_widget, "setText"):
+            status_label_widget.setText(status_text)
+
+        if hasattr(self.config_manager, "get_dry_run_mode"):
+            dry_run_active = self.config_manager.get_dry_run_mode()
+        elif hasattr(self.config_manager, "get_setting"):
+            dry_run_active = bool(self.config_manager.get_setting('dry_run_mode', False))
+        else:
+            dry_run_active = False
+
+        if hasattr(self.config_manager, "get_schedule_config"):
+            schedule_config = self.config_manager.get_schedule_config() or {}
+        elif hasattr(self.config_manager, "get_setting"):
+            schedule_config = {
+                'interval_minutes': self.config_manager.get_setting('interval_minutes', 0) or 0
+            }
+        else:
+            schedule_config = {}
+        interval_minutes = schedule_config.get('interval_minutes', 0) or 0
+
+        summary_parts = ["Dry Run: On" if dry_run_active else "Dry Run: Off"]
+        if interval_minutes > 0:
+            next_run_time = datetime.now() + timedelta(minutes=interval_minutes)
+            time_display = next_run_time.strftime("%I:%M %p").lstrip("0")
+            summary_parts.append(
+                f"Next run: in {interval_minutes} min (~{time_display})"
+            )
+        else:
+            summary_parts.append("Next run: Not scheduled")
+
+        summary_label = getattr(self, "status_summary_label", None)
+        if summary_label is not None and hasattr(summary_label, "setText"):
+            summary_label.setText(" • ".join(summary_parts))
 
     def _get_selected_folder_path(self) -> Path | None:
         """Return the Path of the currently selected monitored folder."""
@@ -793,6 +969,8 @@ class ConfigWindow(QWidget):
             self.log_queue
         )
         self.monitoring_worker.start()
+        self.worker_status = "Dry Run Active" if dry_run_active else "Running"
+        self._update_ui_for_status_and_mode()
         # self.worker_status will be updated by message from worker, then _update_ui_for_status_and_mode
         # For immediate feedback, we can anticipate:
         # self.worker_status = "Running" # Anticipate
@@ -805,6 +983,8 @@ class ConfigWindow(QWidget):
         if self.monitoring_worker and self.monitoring_worker.is_alive():
             self.log_queue.put("INFO: Stopping monitoring...")
             self.monitoring_worker.stop()
+            self.worker_status = "Stopping..."
+            self._update_ui_for_status_and_mode()
             # self.monitoring_worker.join(timeout=1.0) # Avoid long UI block
             # self.worker_status = "Stopped" # Anticipate
             # self._update_ui_for_status_and_mode()
@@ -846,7 +1026,11 @@ class ConfigWindow(QWidget):
                     else:
                         print(f"DEBUG: Notification suppressed by level ({category}): {message.get('title')}", file=sys.stderr)
                 elif isinstance(message, str) and message.startswith("STATUS:"):
-                    self.worker_status = message.split(":", 1)[1].strip()
+                    reported_status = message.split(":", 1)[1].strip()
+                    if reported_status.lower().startswith("running") and self.config_manager.get_dry_run_mode():
+                        self.worker_status = "Dry Run Active"
+                    else:
+                        self.worker_status = reported_status
                     # self.status_label.setText(self.worker_status) # Delegated
                     self._update_ui_for_status_and_mode() # Update all UI based on new status
                     # # Update button states based on reported status # Delegated
