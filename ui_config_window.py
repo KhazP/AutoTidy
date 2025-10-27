@@ -221,6 +221,17 @@ class ConfigWindow(QWidget):
         rule_controls_layout.setSpacing(6)
 
         rule_controls_layout.addWidget(QLabel("Monitored Folders:"))
+        self.folder_search_edit = QLineEdit()
+        if hasattr(self.folder_search_edit, "setPlaceholderText"):
+            self.folder_search_edit.setPlaceholderText("Search monitored folders…")
+        if hasattr(self.folder_search_edit, "setClearButtonEnabled"):
+            try:
+                self.folder_search_edit.setClearButtonEnabled(True)
+            except Exception:
+                pass
+        if hasattr(self.folder_search_edit, "textChanged"):
+            self.folder_search_edit.textChanged.connect(self._filter_folder_list)
+        rule_controls_layout.addWidget(self.folder_search_edit)
         self.folder_list_widget = QListWidget()
         rule_controls_layout.addWidget(self.folder_list_widget)
 
@@ -481,7 +492,12 @@ class ConfigWindow(QWidget):
         self._update_ui_for_status_and_mode() # Initial UI update
         self._set_initial_focus() # Set initial focus
         self._apply_instruction_visibility()
-        self._update_placeholder_visibility()
+        initial_search = (
+            self.folder_search_edit.text()
+            if hasattr(self, "folder_search_edit") and hasattr(self.folder_search_edit, "text")
+            else ""
+        )
+        self._filter_folder_list(initial_search)
 
     def _set_initial_focus(self):
         """Sets the initial focus to a sensible widget."""
@@ -590,14 +606,52 @@ class ConfigWindow(QWidget):
         should_show = not self.config_manager.get_setting("hide_instructions", False)
         self.instructions_container.setVisible(should_show)
 
+    def _filter_folder_list(self, search_term: str):
+        """Filter the monitored folder list using the provided search term."""
+        list_widget = getattr(self, "folder_list_widget", None)
+        if list_widget is None or not hasattr(list_widget, "count"):
+            return
+
+        normalized = (search_term or "").strip().lower()
+        current_item = list_widget.currentItem() if hasattr(list_widget, "currentItem") else None
+
+        for index in range(list_widget.count()):
+            item = list_widget.item(index)
+            if item is None:
+                continue
+            item_text = item.text() if hasattr(item, "text") else ""
+            matches = normalized in item_text.lower()
+            if hasattr(item, "setHidden"):
+                item.setHidden(not matches)
+            if not matches and current_item is item and hasattr(list_widget, "setCurrentItem"):
+                list_widget.setCurrentItem(None)
+                current_item = None
+
+        self._update_placeholder_visibility()
+
     def _update_placeholder_visibility(self):
         """Toggle the placeholder overlay based on folder availability and selection."""
         overlay = getattr(self, "_placeholder_overlay", None)
-        if overlay is None:
+        list_widget = getattr(self, "folder_list_widget", None)
+        if overlay is None or list_widget is None or not hasattr(list_widget, "count"):
             return
 
-        has_items = self.folder_list_widget.count() > 0
-        has_selection = self.folder_list_widget.currentItem() is not None
+        current_item = list_widget.currentItem() if hasattr(list_widget, "currentItem") else None
+        visible_items = 0
+        has_visible_selection = False
+
+        for index in range(list_widget.count()):
+            item = list_widget.item(index)
+            if item is None:
+                continue
+            is_hidden = item.isHidden() if hasattr(item, "isHidden") else False
+            if not is_hidden:
+                visible_items += 1
+                if item is current_item:
+                    has_visible_selection = True
+
+        has_items = visible_items > 0
+        has_selection = has_visible_selection
         should_show = not has_items or not has_selection
         overlay.setVisible(should_show)
 
@@ -751,7 +805,12 @@ class ConfigWindow(QWidget):
         if self.folder_list_widget.count() > 0:
             self.folder_list_widget.setCurrentRow(0)
 
-        self._update_placeholder_visibility()
+        search_text = (
+            self.folder_search_edit.text()
+            if hasattr(self, "folder_search_edit") and hasattr(self.folder_search_edit, "text")
+            else ""
+        )
+        self._filter_folder_list(search_text)
 
     def _setup_log_timer(self):
         """Set up the QTimer to check the log queue."""
@@ -770,7 +829,12 @@ class ConfigWindow(QWidget):
                 self.folder_list_widget.addItem(list_item)
                 self.folder_list_widget.setCurrentItem(list_item) # Select the new item
                 self.log_queue.put(f"INFO: Added folder: {dir_path}")
-                self._update_placeholder_visibility()
+                search_text = (
+                    self.folder_search_edit.text()
+                    if hasattr(self, "folder_search_edit") and hasattr(self.folder_search_edit, "text")
+                    else ""
+                )
+                self._filter_folder_list(search_text)
             else:
                  QMessageBox.warning(self, "Folder Exists", f"The folder '{dir_path}' is already being monitored.")
 
@@ -814,7 +878,12 @@ class ConfigWindow(QWidget):
                          self.exclusion_help_button.setEnabled(False) # Disable help button
                          # Explicitly call update_rule_inputs with None when list is empty
                          self.update_rule_inputs(None, None)
-                    self._update_placeholder_visibility()
+                    search_text = (
+                        self.folder_search_edit.text()
+                        if hasattr(self, "folder_search_edit") and hasattr(self.folder_search_edit, "text")
+                        else ""
+                    )
+                    self._filter_folder_list(search_text)
                 else:
                      QMessageBox.warning(self, "Error", f"Could not remove folder '{path}' from configuration.")
         else:
