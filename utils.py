@@ -8,9 +8,15 @@ import send2trash # Import send2trash
 from datetime import datetime, timedelta
 from pathlib import Path
 
-def check_file(file_path: Path, age_days: int, pattern: str, use_regex: bool) -> bool:
+def check_file(
+    file_path: Path,
+    age_days: int,
+    pattern: str,
+    use_regex: bool,
+    rule_logic: str = "OR",
+) -> bool:
     """
-    Checks if a file meets the criteria (age OR pattern).
+    Checks if a file meets the criteria using the configured logic.
 
     Args:
         file_path: Path object of the file to check.
@@ -19,28 +25,35 @@ def check_file(file_path: Path, age_days: int, pattern: str, use_regex: bool) ->
         use_regex: Boolean indicating whether the pattern is a regular expression.
 
     Returns:
-        True if the file matches either condition, False otherwise.
+        True if the file matches the configured logic, False otherwise.
     """
     try:
         # 1. Check Age
+        age_match = False
         if age_days > 0:
             mod_time = file_path.stat().st_mtime
             age_threshold = datetime.now() - timedelta(days=age_days)
             if datetime.fromtimestamp(mod_time) < age_threshold:
-                return True # Matches age criteria
+                age_match = True # Matches age criteria
 
         # 2. Check Pattern
+        pattern_match = False
         if pattern:
             if use_regex:
                 try:
                     if re.fullmatch(pattern, file_path.name):
-                        return True # Matches regex pattern criteria
+                        pattern_match = True # Matches regex pattern criteria
                 except re.error as e:
                     print(f"Error: Invalid regex pattern '{pattern}' for file {file_path.name}: {e}", file=sys.stderr)
                     # Treat as non-match if regex is invalid
             else:
                 if fnmatch.fnmatch(file_path.name, pattern):
-                    return True # Matches fnmatch pattern criteria
+                    pattern_match = True # Matches fnmatch pattern criteria
+
+        logic = (rule_logic or "OR").upper()
+        if logic == "AND":
+            return age_match and pattern_match
+        return age_match or pattern_match
 
     except FileNotFoundError:
         # File might have been deleted between listing and checking
