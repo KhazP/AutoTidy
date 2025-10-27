@@ -11,7 +11,12 @@ from PyQt6.QtCore import QTimer, Qt, pyqtSlot
 from config_manager import ConfigManager
 from worker import MonitoringWorker
 from ui_settings_dialog import SettingsDialog
-from constants import RULE_TEMPLATES # Import RULE_TEMPLATES
+from constants import (
+    RULE_TEMPLATES, # Import RULE_TEMPLATES
+    NOTIFICATION_LEVEL_NONE,
+    NOTIFICATION_LEVEL_ERROR,
+    NOTIFICATION_LEVEL_SUMMARY,
+)
 
 
 from undo_manager import UndoManager # Added for Undo functionality
@@ -545,13 +550,37 @@ class ConfigWindow(QWidget):
             # self._update_ui_for_status_and_mode()
 
 
+    def _should_show_notification(self, category: str) -> bool:
+        level = self.config_manager.get_notification_level()
+        if level == NOTIFICATION_LEVEL_NONE:
+            return False
+        if level == NOTIFICATION_LEVEL_ERROR:
+            return category == "error"
+        if level == NOTIFICATION_LEVEL_SUMMARY:
+            return category in {"summary", "error"}
+        return True
+
     @pyqtSlot()
     def check_log_queue(self):
         """Check the queue for messages from the worker thread and update UI."""
         try:
             while True: # Process all messages currently in queue
                 message = self.log_queue.get_nowait()
-                if message.startswith("STATUS:"):
+                if isinstance(message, dict) and message.get("type") == "SHOW_NOTIFICATION":
+                    category = message.get("category", "info")
+                    if self._should_show_notification(category):
+                        app_instance = QApplication.instance()
+                        # Check if it's an instance of our AutoTidyApp (which has the method)
+                        if app_instance and hasattr(app_instance, 'show_system_notification') and callable(getattr(app_instance, 'show_system_notification')):
+                            title = message.get("title", "AutoTidy")
+                            body = message.get("message", "")
+                            # Explicitly call, relying on the hasattr check
+                            getattr(app_instance, 'show_system_notification')(title, body)
+                        else:
+                            print(f"DEBUG: AutoTidyApp instance not found or no show_system_notification method for: {message}", file=sys.stderr)
+                    else:
+                        print(f"DEBUG: Notification suppressed by level ({category}): {message.get('title')}", file=sys.stderr)
+                elif isinstance(message, str) and message.startswith("STATUS:"):
                     self.worker_status = message.split(":", 1)[1].strip()
                     # self.status_label.setText(self.worker_status) # Delegated
                     self._update_ui_for_status_and_mode() # Update all UI based on new status
@@ -567,23 +596,10 @@ class ConfigWindow(QWidget):
                     #          self.status_label.setText("Stopped (Unexpectedly)") # This part can be refined in _update_ui
 
 
-                elif message.startswith("ERROR:"):
+                elif isinstance(message, str) and message.startswith("ERROR:"):
                     self.log_view.append(f'<font color="red">{message}</font>')
-                elif message.startswith("WARNING:"):
+                elif isinstance(message, str) and message.startswith("WARNING:"):
                      self.log_view.append(f'<font color="orange">{message}</font>')
-                elif isinstance(message, dict) and message.get("type") == "SHOW_NOTIFICATION":
-                    if self.config_manager.get_setting("show_notifications", True):
-                        app_instance = QApplication.instance()
-                        # Check if it's an instance of our AutoTidyApp (which has the method)
-                        if app_instance and hasattr(app_instance, 'show_system_notification') and callable(getattr(app_instance, 'show_system_notification')):
-                            title = message.get("title", "AutoTidy")
-                            body = message.get("message", "")
-                            # Explicitly call, relying on the hasattr check
-                            getattr(app_instance, 'show_system_notification')(title, body)
-                        else:
-                            print(f"DEBUG: AutoTidyApp instance not found or no show_system_notification method for: {message}", file=sys.stderr)
-                    else:
-                        print(f"DEBUG: Notifications disabled. Suppressed: {message.get('title')}", file=sys.stderr)
                 elif isinstance(message, str): # Ensure only strings are appended directly
                     self.log_view.append(message)
                 else:

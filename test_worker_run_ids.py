@@ -5,6 +5,7 @@ from pathlib import Path
 from unittest import TestCase
 from unittest.mock import MagicMock, patch
 
+from constants import NOTIFICATION_LEVEL_ALL
 from worker import MonitoringWorker
 
 
@@ -51,6 +52,9 @@ class MockConfigManager:
 
     def get_config_dir_path(self):
         return self._config_dir
+
+    def get_notification_level(self):
+        return NOTIFICATION_LEVEL_ALL
 
 
 class TestMonitoringWorkerRunIds(TestCase):

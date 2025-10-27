@@ -9,6 +9,11 @@ import fnmatch
 import re
 
 from config_manager import ConfigManager
+from constants import (
+    NOTIFICATION_LEVEL_NONE,
+    NOTIFICATION_LEVEL_ERROR,
+    NOTIFICATION_LEVEL_SUMMARY,
+)
 from utils import check_file, process_file_action
 from history_manager import HistoryManager # Import HistoryManager
 
@@ -25,6 +30,32 @@ class MonitoringWorker(threading.Thread):
         self._stop_event = threading.Event()
         self.running = False
         self.history_manager = HistoryManager(self.config_manager) # Instantiate HistoryManager
+
+    def _should_send_notification(self, category: str) -> bool:
+        """Return True when the current level allows the notification category."""
+        level = self.config_manager.get_notification_level()
+        if level == NOTIFICATION_LEVEL_NONE:
+            return False
+        if level == NOTIFICATION_LEVEL_ERROR:
+            return category == "error"
+        if level == NOTIFICATION_LEVEL_SUMMARY:
+            return category in {"summary", "error"}
+        # Level == ALL (or any unrecognized value) defaults to permitting notifications.
+        return True
+
+    def _queue_notification(self, category: str, title: str, message: str):
+        if self._should_send_notification(category):
+            self.log_queue.put({
+                "type": "SHOW_NOTIFICATION",
+                "title": title,
+                "message": message,
+                "category": category,
+            })
+
+    def _log_error(self, message: str):
+        formatted = f"ERROR: {message}"
+        self.log_queue.put(formatted)
+        self._queue_notification("error", "AutoTidy Error", message)
 
     def run(self):
         """Main loop for the worker thread."""
@@ -69,7 +100,7 @@ class MonitoringWorker(threading.Thread):
 
                     monitored_path = Path(path_str)
                     if not monitored_path.is_dir():
-                        self.log_queue.put(f"ERROR: Monitored path is not a directory or does not exist: {path_str}")
+                        self._log_error(f"Monitored path is not a directory or does not exist: {path_str}")
                         continue
 
                     scan_mode = "Regex" if use_regex else "Pattern"
@@ -103,8 +134,8 @@ class MonitoringWorker(threading.Thread):
                                                     is_excluded = True
                                                     break
                                         except re.error as e:
-                                            self.log_queue.put(
-                                                f"ERROR: Invalid exclusion pattern '{exclusion}' for {monitored_path}: {e}"
+                                            self._log_error(
+                                                f"Invalid exclusion pattern '{exclusion}' for {monitored_path}: {e}"
                                             )
                                             continue
 
@@ -130,16 +161,20 @@ class MonitoringWorker(threading.Thread):
                                         files_processed_this_folder += 1
 
                     except PermissionError:
-                         self.log_queue.put(f"ERROR: Permission denied accessing folder: {monitored_path}")
+                         self._log_error(f"Permission denied accessing folder: {monitored_path}")
                     except Exception as e:
-                         self.log_queue.put(f"ERROR: Unexpected error scanning {monitored_path}: {e}")
+                         self._log_error(f"Unexpected error scanning {monitored_path}: {e}")
 
                     if files_processed_this_folder > 0:
                          self.log_queue.put(f"INFO: Finished scan for {monitored_path}, processed {files_processed_this_folder} file(s).")
                     total_files_processed_in_cycle += files_processed_this_folder # Accumulate for the cycle
 
                 if total_files_processed_in_cycle > 0:
-                    self.log_queue.put({"type": "SHOW_NOTIFICATION", "title": "AutoTidy Scan Complete", "message": f"{total_files_processed_in_cycle} file(s) processed successfully."})
+                    self._queue_notification(
+                        "summary",
+                        "AutoTidy Scan Complete",
+                        f"{total_files_processed_in_cycle} file(s) processed successfully."
+                    )
                 
                 self.log_queue.put("INFO: Scan cycle complete.")
 
