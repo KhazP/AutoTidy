@@ -3,7 +3,7 @@ import queue
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QListWidget, QLineEdit,
     QSpinBox, QLabel, QTextEdit, QFileDialog, QMessageBox, QListWidgetItem, QComboBox, QCheckBox,
-    QApplication, QMenu
+    QApplication, QMenu, QInputDialog
 )
 from PyQt6.QtGui import QKeySequence, QAction # Import QAction
 from PyQt6.QtCore import QTimer, Qt, pyqtSlot
@@ -772,20 +772,78 @@ class ConfigWindow(QWidget):
     # Placeholder methods for exclusion functionality to resolve linting errors
     # These should be implemented or connected to actual logic if it exists elsewhere.
     def add_exclusion_pattern(self):
-        self.log_queue.put("INFO: Add exclusion pattern clicked (placeholder).")
-        # Example: Open a dialog to get new pattern, then add to list and config
+        """Prompt the user for a new exclusion pattern and add it to the rule."""
+        if not self.folder_list_widget.currentItem():
+            QMessageBox.information(self, "No Folder Selected", "Select a folder before adding an exclusion pattern.")
+            return
+
+        pattern_text, ok = QInputDialog.getText(
+            self,
+            "Add Exclusion Pattern",
+            "Enter a new exclusion pattern:",
+        )
+
+        if not ok:
+            return
+
+        pattern = pattern_text.strip()
+        if not pattern:
+            QMessageBox.warning(self, "Invalid Pattern", "The exclusion pattern cannot be empty.")
+            return
+
+        existing_patterns = {
+            self.exclusion_list_widget.item(i).text()
+            for i in range(self.exclusion_list_widget.count())
+        }
+
+        if pattern in existing_patterns:
+            QMessageBox.information(self, "Duplicate Pattern", "This exclusion pattern already exists.")
+            return
+
+        self.exclusion_list_widget.blockSignals(True)
+        item = QListWidgetItem(pattern)
+        item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable)
+        self.exclusion_list_widget.addItem(item)
+        self.exclusion_list_widget.blockSignals(False)
+
+        self.save_rule_changes()
+        self.log_queue.put(f"INFO: Added exclusion pattern '{pattern}' for {self.folder_list_widget.currentItem().text()}.")
 
     def remove_selected_exclusion_pattern(self):
-        self.log_queue.put("INFO: Remove selected exclusion pattern clicked (placeholder).")
-        # Example: Get selected pattern from self.exclusion_list_widget, remove it, update config
+        """Remove the currently selected exclusion pattern after confirmation."""
+        if not self.folder_list_widget.currentItem():
+            QMessageBox.information(self, "No Folder Selected", "Select a folder before removing an exclusion pattern.")
+            return
+
+        current_item = self.exclusion_list_widget.currentItem()
+        if not current_item:
+            QMessageBox.information(self, "No Pattern Selected", "Select an exclusion pattern to remove.")
+            return
+
+        pattern = current_item.text()
+        reply = QMessageBox.question(
+            self,
+            "Remove Exclusion Pattern",
+            f"Remove the exclusion pattern '{pattern}'?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        row = self.exclusion_list_widget.row(current_item)
+        self.exclusion_list_widget.takeItem(row)
+        self.save_rule_changes()
+        self.log_queue.put(f"INFO: Removed exclusion pattern '{pattern}' for {self.folder_list_widget.currentItem().text()}.")
 
     def show_exclusion_pattern_help(self):
         self.log_queue.put("INFO: Show exclusion pattern help clicked (placeholder).")
         QMessageBox.information(self, "Exclusion Help", "Enter patterns (e.g., *.tmp, temp_folder/) to exclude files/folders. One per line.")
 
     def save_exclusion_list_changes(self, item: QListWidgetItem):
-        self.log_queue.put(f"INFO: Exclusion item '{item.text()}' changed (placeholder for saving).")
-        # This should trigger saving the entire exclusion list for the current folder rule.
+        if item:
+            self.log_queue.put(f"INFO: Updated exclusion pattern to '{item.text()}'.")
         self.save_rule_changes() # Re-use save_rule_changes to update the whole rule including exclusions
 
 
