@@ -27,22 +27,17 @@ def handle_context_menu_action(action, folder_path, config_manager):
         # msg_box.exec()
         return
 
-    current_config = config_manager.get_config()
     folder_path = os.path.normpath(folder_path) # Normalize path
 
     if action == "add_folder":
-        if folder_path not in current_config["folders_to_monitor"]:
-            current_config["folders_to_monitor"].append(folder_path)
-            config_manager.save_config(current_config)
+        if config_manager.add_folder(folder_path):
             print(f"Added '{folder_path}' to monitored folders via context menu.")
             # TODO: Notify the user, perhaps via a tray notification if app is running
         else:
             print(f"'{folder_path}' is already in monitored folders.")
 
     elif action == "exclude_folder":
-        if folder_path not in current_config["excluded_folders"]:
-            current_config["excluded_folders"].append(folder_path)
-            config_manager.save_config(current_config)
+        if config_manager.add_excluded_folder(folder_path):
             print(f"Added '{folder_path}' to excluded folders via context menu.")
             # TODO: Notify the user
         else:
