@@ -65,7 +65,8 @@ class HistoryViewerDialog(QDialog):
             constants.ACTION_SIMULATED_DELETE_TO_TRASH,
             constants.ACTION_SIMULATED_PERMANENT_DELETE,
             constants.ACTION_ERROR,
-            constants.ACTION_UNDO_MOVE
+            constants.ACTION_UNDO_MOVE,
+            constants.ACTION_SKIPPED
         ])
         self.actionFilter.setToolTip("Filter by the type of action performed.")
         filter_group_layout.addWidget(self.actionFilter, 1, 1)
@@ -332,12 +333,15 @@ class HistoryViewerDialog(QDialog):
                         log_entry = json.loads(line.strip())
                         # Ensure severity is present, default if not
                         if "severity" not in log_entry:
-                            if log_entry.get("status") == constants.STATUS_FAILURE:
+                            status = log_entry.get("status")
+                            if status == constants.STATUS_FAILURE:
                                 log_entry["severity"] = "ERROR"
-                            elif log_entry.get("status") == constants.STATUS_SUCCESS: # or other non-failure statuses
+                            elif status == constants.STATUS_SUCCESS:
                                 log_entry["severity"] = "INFO"
-                            else: # Default or for warnings if we add them
-                                log_entry["severity"] = "INFO" # Default to INFO
+                            elif status:
+                                log_entry["severity"] = "WARNING"
+                            else:
+                                log_entry["severity"] = "INFO"
                         self.all_history_data.append(log_entry)
                     except json.JSONDecodeError:
                         print(f"Skipping malformed line in history: {line.strip()}") # Log to console

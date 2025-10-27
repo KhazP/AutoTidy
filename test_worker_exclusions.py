@@ -2,8 +2,9 @@ import queue
 import tempfile
 from pathlib import Path
 from unittest import TestCase
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
+import constants
 from constants import NOTIFICATION_LEVEL_ALL
 from worker import MonitoringWorker
 
@@ -66,9 +67,11 @@ class TestMonitoringWorkerExclusions(TestCase):
         log_queue = queue.Queue()
         worker = MonitoringWorker(config_manager, log_queue)
         worker._stop_event = SingleCycleStopEvent()
+        history_log_mock = MagicMock()
+        worker.history_manager.log_action = history_log_mock
         with patch('worker.check_file', return_value=True), patch('worker.process_file_action') as process_mock:
             worker.run()
-        return process_mock
+        return process_mock, history_log_mock
 
     def test_glob_exclusion_prevents_processing(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -87,8 +90,13 @@ class TestMonitoringWorkerExclusions(TestCase):
                 exclusions=['skip_*.txt']
             )
 
-            process_mock = self._run_worker_once(config_manager)
+            process_mock, history_log_mock = self._run_worker_once(config_manager)
             self.assertEqual(process_mock.call_count, 0, "Excluded files should not trigger processing")
+            self.assertEqual(history_log_mock.call_count, 1, "Excluded files should be logged as skipped")
+            logged_entry = history_log_mock.call_args[0][0]
+            self.assertEqual(logged_entry["status"], constants.STATUS_SKIPPED)
+            self.assertEqual(logged_entry["action_taken"], constants.ACTION_SKIPPED)
+            self.assertIn("Skipped excluded file", logged_entry["details"])
 
     def test_regex_exclusion_prevents_processing(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -107,8 +115,13 @@ class TestMonitoringWorkerExclusions(TestCase):
                 exclusions=[r"skipme\.log"]
             )
 
-            process_mock = self._run_worker_once(config_manager)
+            process_mock, history_log_mock = self._run_worker_once(config_manager)
             self.assertEqual(process_mock.call_count, 0, "Excluded files should not trigger processing")
+            self.assertEqual(history_log_mock.call_count, 1, "Excluded files should be logged as skipped")
+            logged_entry = history_log_mock.call_args[0][0]
+            self.assertEqual(logged_entry["status"], constants.STATUS_SKIPPED)
+            self.assertEqual(logged_entry["action_taken"], constants.ACTION_SKIPPED)
+            self.assertIn("Skipped excluded file", logged_entry["details"])
 
 
 if __name__ == '__main__':

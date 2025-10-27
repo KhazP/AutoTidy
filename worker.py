@@ -14,6 +14,7 @@ from constants import (
     NOTIFICATION_LEVEL_ERROR,
     NOTIFICATION_LEVEL_SUMMARY,
 )
+import constants
 from utils import check_file, process_file_action
 from history_manager import HistoryManager # Import HistoryManager
 
@@ -140,7 +141,21 @@ class MonitoringWorker(threading.Thread):
                                             continue
 
                                     if is_excluded:
-                                        self.log_queue.put(f"INFO: Skipping excluded file: {item.name}")
+                                        details_message = f"Skipped excluded file: {item.name}"
+                                        self.log_queue.put(f"INFO: {details_message}")
+                                        self.history_manager.log_action({
+                                            "original_path": str(item),
+                                            "action_taken": constants.ACTION_SKIPPED,
+                                            "destination_path": None,
+                                            "monitored_folder": str(monitored_path),
+                                            "rule_pattern": pattern,
+                                            "rule_age_days": age_days,
+                                            "rule_use_regex": use_regex,
+                                            "rule_action_config": action_to_perform,
+                                            "status": constants.STATUS_SKIPPED,
+                                            "details": details_message,
+                                            "run_id": current_run_id,
+                                        })
                                         continue
 
                                     success, message = process_file_action(
