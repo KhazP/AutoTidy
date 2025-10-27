@@ -1,3 +1,8 @@
+import os
+from datetime import datetime
+from pathlib import Path
+from string import Formatter
+
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QCheckBox, QDialogButtonBox,
     QWidget, QMessageBox, QLabel, QSpinBox, QLineEdit, QComboBox, QGroupBox,
@@ -30,6 +35,7 @@ class SettingsDialog(QDialog):
         self.initial_dry_run_mode = self.config_manager.get_dry_run_mode()
         # self.initial_show_notifications = self.config_manager.get_setting("show_notifications", True) # Old setting
         self.initial_notification_level = self.config_manager.get_notification_level() # New setting
+        self._archive_template_error: str | None = None
 
         self.setWindowTitle("AutoTidy Settings")
         self.setModal(True) # Block interaction with the main window
@@ -194,6 +200,13 @@ class SettingsDialog(QDialog):
         archiving_layout.addWidget(archive_template_label)
         archiving_layout.addWidget(self.archivePathTemplateInput)
 
+        self.archiveTemplatePreviewLabel = QLabel()
+        self.archiveTemplatePreviewLabel.setObjectName("archiveTemplatePreviewLabel")
+        self.archiveTemplatePreviewLabel.setWordWrap(True)
+        self.archiveTemplatePreviewLabel.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.archiveTemplatePreviewLabel.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        archiving_layout.addWidget(self.archiveTemplatePreviewLabel)
+
         archive_template_desc_label = QLabel(
             "Placeholders: {YYYY}, {MM}, {DD}, {FILENAME}, {EXT}, {ORIGINAL_FOLDER_NAME}"
         )
@@ -204,6 +217,9 @@ class SettingsDialog(QDialog):
 
         archiving_group.setLayout(archiving_layout)
         layout.addWidget(archiving_group)
+
+        self.archivePathTemplateInput.textChanged.connect(self._on_archive_template_changed)
+        self._update_archive_template_preview(self.archivePathTemplateInput.text())
 
 
         # --- Version Label ---
@@ -263,6 +279,100 @@ class SettingsDialog(QDialog):
     #         action.setShortcutContext(Qt.ShortcutContext.WindowShortcut)
     #     return action
 
+    def _on_archive_template_changed(self, text: str):
+        """Render a preview when the archive template text changes."""
+        self._update_archive_template_preview(text)
+
+    def _update_archive_template_preview(self, template_text: str):
+        """Update the inline preview and error state for the archive template."""
+        preview_path, error_message, using_default = self._calculate_archive_template_preview(template_text)
+        self._archive_template_error = error_message
+
+        if error_message:
+            self.archiveTemplatePreviewLabel.setText(f"⚠️ {error_message}")
+            self.archiveTemplatePreviewLabel.setStyleSheet("color: #d9534f;")
+            self.archivePathTemplateInput.setStyleSheet("border: 1px solid #d9534f;")
+        else:
+            suffix_note = " (using default template)" if using_default and not template_text.strip() else ""
+            self.archiveTemplatePreviewLabel.setText(f"Preview: {preview_path}{suffix_note}")
+            self.archiveTemplatePreviewLabel.setStyleSheet("color: grey; font-style: italic;")
+            self.archivePathTemplateInput.setStyleSheet("")
+
+    def _calculate_archive_template_preview(self, template_text: str) -> tuple[str | None, str | None, bool]:
+        """Return a preview path, validation error, and whether defaults were used."""
+        trimmed = template_text.strip()
+        using_default_template = False
+        default_template = self.config_manager.default_config.get('settings', {}).get(
+            'archive_path_template',
+            '_Cleanup/{YYYY}-{MM}-{DD}',
+        )
+
+        if not trimmed:
+            trimmed = default_template
+            using_default_template = True
+
+        formatter = Formatter()
+        allowed_placeholders = {
+            'YYYY',
+            'MM',
+            'DD',
+            'FILENAME',
+            'EXT',
+            'ORIGINAL_FOLDER_NAME',
+        }
+
+        try:
+            parsed_segments = list(formatter.parse(trimmed))
+        except ValueError as exc:
+            return None, f"Invalid template: {exc}", using_default_template
+
+        for _, field_name, format_spec, conversion in parsed_segments:
+            if field_name is None:
+                continue
+            if conversion:
+                return None, f"Invalid placeholder {{{field_name}!{conversion}}}.", using_default_template
+            if format_spec:
+                return None, f"Formatting is not supported for {{{field_name}}}.", using_default_template
+            if field_name not in allowed_placeholders:
+                return None, f"Unknown placeholder {{{field_name}}}.", using_default_template
+
+        sample_folder = Path.home() / "Downloads"
+        sample_filename_stem = "example"
+        sample_extension = ".txt"
+
+        now = datetime.now()
+
+        replacements = {
+            "{YYYY}": now.strftime("%Y"),
+            "{MM}": now.strftime("%m"),
+            "{DD}": now.strftime("%d"),
+            "{FILENAME}": sample_filename_stem,
+            "{EXT}": sample_extension,
+            "{ORIGINAL_FOLDER_NAME}": sample_folder.name,
+        }
+
+        resolved_template = trimmed
+        for placeholder, value in replacements.items():
+            resolved_template = resolved_template.replace(placeholder, value)
+
+        resolved_template = os.path.expandvars(resolved_template)
+        resolved_template = os.path.expanduser(resolved_template)
+
+        target_path_candidate = Path(resolved_template)
+        if not target_path_candidate.is_absolute():
+            target_path_candidate = (sample_folder / target_path_candidate).resolve()
+        else:
+            target_path_candidate = target_path_candidate.resolve()
+
+        includes_filename_tokens = any(token in trimmed for token in ("{FILENAME}", "{EXT}"))
+
+        if includes_filename_tokens:
+            preview_path = target_path_candidate
+        else:
+            preview_path = target_path_candidate / f"{sample_filename_stem}{sample_extension}"
+
+        return os.fspath(preview_path), None, using_default_template
+
     @pyqtSlot()
     def accept(self):
         """Handle OK button click: save settings and apply autostart."""
@@ -270,6 +380,11 @@ class SettingsDialog(QDialog):
         new_start_on_login = self.autostart_checkbox.isChecked()
         # new_check_interval = self.interval_spinbox.value() # Old setting
         new_archive_template = self.archivePathTemplateInput.text().strip()
+
+        self._update_archive_template_preview(self.archivePathTemplateInput.text())
+        if self._archive_template_error:
+            self.archivePathTemplateInput.setFocus()
+            return
 
         # New schedule settings
         new_schedule_type = "interval" # Hardcoded for now
@@ -380,4 +495,5 @@ class SettingsDialog(QDialog):
         if level_index != -1:
             self.notificationLevelComboBox.setCurrentIndex(level_index)
 
+        self._update_archive_template_preview(self.archivePathTemplateInput.text())
         self.autostart_checkbox.setFocus()
