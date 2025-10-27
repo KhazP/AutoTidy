@@ -6,7 +6,7 @@ from PyQt6.QtGui import QKeySequence # Added for shortcuts
 from PyQt6.QtCore import pyqtSlot, Qt # Added Qt
 
 from config_manager import ConfigManager
-from startup_manager import set_autostart
+from startup_manager import is_autostart_supported, set_autostart
 from constants import (
     APP_NAME, APP_VERSION,
     NOTIFICATION_LEVEL_NONE,
@@ -45,6 +45,13 @@ class SettingsDialog(QDialog):
         self.autostart_checkbox.setChecked(self.initial_start_on_login)
         self.autostart_checkbox.setToolTip("If checked, AutoTidy will start when you log into your computer.")
         layout.addWidget(self.autostart_checkbox)
+
+        self._autostart_supported = is_autostart_supported()
+        if not self._autostart_supported:
+            self.autostart_checkbox.setEnabled(False)
+            self.autostart_checkbox.setToolTip(
+                "Autostart configuration is not supported on this platform."
+            )
 
         # --- Dry Run Mode Checkbox ---
         self.dryRunModeCheckbox = QCheckBox("Enable &Dry Run Mode (Simulate actions, no files will be changed)") # Added &
@@ -209,20 +216,28 @@ class SettingsDialog(QDialog):
 
 
         # Check if start_on_login changed
-        if new_start_on_login != self.initial_start_on_login:
-            self.config_manager.set_setting("start_on_login", new_start_on_login)
-            settings_changed = True
-            # Apply autostart setting - this part has side effects beyond just config saving
+        autostart_changed = new_start_on_login != self.initial_start_on_login
+        if self._autostart_supported and autostart_changed:
             success = set_autostart(new_start_on_login, APP_NAME)
-            if not success:
+            if success:
+                self.config_manager.set_setting("start_on_login", new_start_on_login)
+                self.initial_start_on_login = new_start_on_login # Update initial state
+                settings_changed = True
+            else:
+                self.autostart_checkbox.setChecked(self.initial_start_on_login)
                 QMessageBox.warning(
                     self,
                     "Autostart Error",
                     f"Failed to {'enable' if new_start_on_login else 'disable'} autostart. "
                     f"Please check application logs or permissions."
                 )
-            else:
-                self.initial_start_on_login = new_start_on_login # Update initial state
+        elif autostart_changed:
+            self.autostart_checkbox.setChecked(self.initial_start_on_login)
+            QMessageBox.information(
+                self,
+                "Autostart Not Available",
+                "Autostart configuration is not supported on this platform."
+            )
 
         # Check if check_interval_seconds changed (Commented out, using new schedule settings)
         # if new_check_interval != self.initial_check_interval:

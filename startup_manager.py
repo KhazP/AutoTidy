@@ -1,10 +1,29 @@
-\
-import sys
 import os
 import platform
-import winreg # Only available on Windows
+import sys
+from typing import Any, Optional
+
+winreg: Optional[Any]
+
+if platform.system() == "Windows":
+    try:  # pragma: no cover - exercised indirectly on Windows
+        import winreg  # type: ignore[attr-defined]
+    except ImportError:  # pragma: no cover - safety guard if winreg is unavailable
+        winreg = None  # type: ignore[assignment]
+else:
+    winreg = None  # type: ignore[assignment]
 
 APP_REGISTRY_PATH = r"Software\\Microsoft\\Windows\\CurrentVersion\\Run"
+
+def is_autostart_supported() -> bool:
+    """Return True if the current platform has an autostart implementation."""
+
+    system = platform.system()
+    if system == "Windows":
+        return winreg is not None
+    if system == "Linux":
+        return True
+    return False
 
 def _get_executable_path() -> str:
     """Gets the path to the executable or the main script."""
@@ -45,6 +64,12 @@ def set_autostart(enable: bool, app_name: str):
     system = platform.system()
 
     if system == "Windows":
+        if winreg is None:
+            print(
+                "ERROR: Windows autostart configuration is unavailable because the winreg module could not be imported.",
+                file=sys.stderr,
+            )
+            return False
         try:
             key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, APP_REGISTRY_PATH, 0, winreg.KEY_WRITE)
             if enable:
@@ -112,7 +137,10 @@ Terminal=false
                 return True # Not an error if already disabled
 
     else:
-        print(f"WARNING: Autostart not implemented for operating system: {system}", file=sys.stderr)
+        print(
+            f"WARNING: Autostart not implemented for operating system: {system}",
+            file=sys.stderr,
+        )
         return False # Indicate not supported/implemented
 
 # Example usage (for testing):
