@@ -4,10 +4,11 @@ from pathlib import Path
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QTableWidget, QTableWidgetItem, QPushButton,
     QAbstractItemView, QHBoxLayout, QHeaderView, QMessageBox, QFileDialog,
-    QLabel, QLineEdit, QComboBox, QDateEdit, QGridLayout
+    QLabel, QLineEdit, QComboBox, QDateEdit, QGridLayout, QGroupBox,
+    QToolButton, QWidget
 )
 from PyQt6.QtGui import QKeySequence
-from PyQt6.QtCore import Qt, QDateTime
+from PyQt6.QtCore import Qt, QDateTime, QTimer
 from datetime import datetime # Added to resolve datetime undefined error
 import constants
 import csv # For CSV export
@@ -29,29 +30,63 @@ class HistoryViewerDialog(QDialog):
         main_layout = QVBoxLayout(self)
 
         # Filter Layout
-        filter_group_layout = QGridLayout()
+        self._default_start_date = QDateTime.currentDateTime().addDays(-7)
+        self.filters_group = QGroupBox("Filters")
+        filters_group_layout = QVBoxLayout()
+        filters_group_layout.setContentsMargins(10, 8, 10, 10)
+        filters_group_layout.setSpacing(6)
+        self.filters_group.setLayout(filters_group_layout)
+
+        # Basic Filters (Date & Folder)
+        basic_filters_container = QWidget()
+        basic_filters_layout = QGridLayout()
+        basic_filters_layout.setContentsMargins(0, 0, 0, 0)
+        basic_filters_layout.setHorizontalSpacing(8)
+        basic_filters_layout.setVerticalSpacing(4)
+        basic_filters_container.setLayout(basic_filters_layout)
 
         # Date Filter
-        filter_group_layout.addWidget(QLabel("Filter by Date:"), 0, 0)
+        basic_filters_layout.addWidget(QLabel("Filter by Date:"), 0, 0)
         self.dateFilter = QDateEdit()
         self.dateFilter.setCalendarPopup(True)
-        self.dateFilter.setDateTime(QDateTime.currentDateTime().addDays(-7)) # Default to last 7 days
+        self.dateFilter.setDateTime(self._default_start_date) # Default to last 7 days
         self.dateFilter.setDisplayFormat("yyyy-MM-dd")
         self.dateFilter.setToolTip("Show logs from this date onwards.")
-        filter_group_layout.addWidget(self.dateFilter, 0, 1)
+        basic_filters_layout.addWidget(self.dateFilter, 0, 1)
         self.dateFilter.dateChanged.connect(self.apply_filters)
 
 
         # Folder Filter
-        filter_group_layout.addWidget(QLabel("Filter by Folder:"), 0, 2)
+        basic_filters_layout.addWidget(QLabel("Filter by Folder:"), 0, 2)
         self.folderFilter = QLineEdit()
         self.folderFilter.setPlaceholderText("Enter monitored folder path (partial match)")
         self.folderFilter.setToolTip("Filter by monitored folder containing this text.")
-        filter_group_layout.addWidget(self.folderFilter, 0, 3)
+        basic_filters_layout.addWidget(self.folderFilter, 0, 3)
         self.folderFilter.textChanged.connect(self.apply_filters)
 
+        filters_group_layout.addWidget(basic_filters_container)
+
+        # Advanced Toggle
+        advanced_toggle_layout = QHBoxLayout()
+        advanced_toggle_layout.setContentsMargins(0, 0, 0, 0)
+        advanced_toggle_layout.addStretch()
+        self.toggleAdvancedButton = QToolButton()
+        self.toggleAdvancedButton.setCheckable(True)
+        self.toggleAdvancedButton.setChecked(True)
+        self.toggleAdvancedButton.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        advanced_toggle_layout.addWidget(self.toggleAdvancedButton)
+        filters_group_layout.addLayout(advanced_toggle_layout)
+
+        # Advanced Filters (Action & Severity)
+        self.advanced_container = QWidget()
+        advanced_filters_layout = QGridLayout()
+        advanced_filters_layout.setContentsMargins(0, 0, 0, 0)
+        advanced_filters_layout.setHorizontalSpacing(8)
+        advanced_filters_layout.setVerticalSpacing(4)
+        self.advanced_container.setLayout(advanced_filters_layout)
+
         # Action Type Filter
-        filter_group_layout.addWidget(QLabel("Filter by Action:"), 1, 0)
+        advanced_filters_layout.addWidget(QLabel("Filter by Action:"), 0, 0)
         self.actionFilter = QComboBox()
         self.actionFilter.addItem("All Actions", "")
         # Populate with known actions from constants.py
@@ -69,28 +104,41 @@ class HistoryViewerDialog(QDialog):
             constants.ACTION_SKIPPED
         ])
         self.actionFilter.setToolTip("Filter by the type of action performed.")
-        filter_group_layout.addWidget(self.actionFilter, 1, 1)
+        advanced_filters_layout.addWidget(self.actionFilter, 0, 1)
         self.actionFilter.currentIndexChanged.connect(self.apply_filters)
 
         # Severity Filter
-        filter_group_layout.addWidget(QLabel("Filter by Severity:"), 1, 2)
+        advanced_filters_layout.addWidget(QLabel("Filter by Severity:"), 0, 2)
         self.severityFilter = QComboBox()
         self.severityFilter.addItem("All Severities", "")
         self.severityFilter.addItem("INFO", "INFO")
         self.severityFilter.addItem("WARNING", "WARNING") # Assuming you might add WARNING status/severity
         self.severityFilter.addItem("ERROR", "ERROR") # Corresponds to STATUS_FAILURE
         self.severityFilter.setToolTip("Filter by log severity (INFO, WARNING, ERROR).")
-        filter_group_layout.addWidget(self.severityFilter, 1, 3)
+        advanced_filters_layout.addWidget(self.severityFilter, 0, 3)
         self.severityFilter.currentIndexChanged.connect(self.apply_filters)
-        
+
+        filters_group_layout.addWidget(self.advanced_container)
+
         # Apply Filters Button (Manual refresh of filters)
         self.applyFilterButton = QPushButton("Apply Filters")
         self.applyFilterButton.setToolTip("Manually apply all active filters.")
         self.applyFilterButton.clicked.connect(self.apply_filters)
-        filter_group_layout.addWidget(self.applyFilterButton, 1, 4)
+        self.resetFilterButton = QPushButton("Reset filters")
+        self.resetFilterButton.setToolTip("Clear all filter fields and restore defaults.")
+        self.resetFilterButton.clicked.connect(self.reset_filters)
 
+        filter_buttons_layout = QHBoxLayout()
+        filter_buttons_layout.setContentsMargins(0, 0, 0, 0)
+        filter_buttons_layout.addStretch()
+        filter_buttons_layout.addWidget(self.applyFilterButton)
+        filter_buttons_layout.addWidget(self.resetFilterButton)
+        filters_group_layout.addLayout(filter_buttons_layout)
 
-        main_layout.addLayout(filter_group_layout)
+        self.toggleAdvancedButton.toggled.connect(self.toggle_advanced_filters)
+        self.toggle_advanced_filters(True)
+
+        main_layout.addWidget(self.filters_group)
 
         # Table Widget
         self.historyTable = QTableWidget()
@@ -153,18 +201,48 @@ class HistoryViewerDialog(QDialog):
         self.apply_filters() # Then apply default filters
         self.update_undo_button_state() # Initial state
         self._setup_shortcuts() # Call new method
-        self.historyTable.setFocus() # Set initial focus
+        QTimer.singleShot(0, self.historyTable.setFocus) # Ensure the table gains focus after layout setup
 
     def _setup_shortcuts(self):
         """Setup keyboard shortcuts."""
         self.refreshButton.setShortcut(QKeySequence(Qt.Key.Key_F5))
         # Undo shortcut can be tricky if it needs context (which item is selected)
         # A common pattern is Ctrl+Z. We can add it to the button.
-        # For it to work globally in the dialog when the table has focus, 
+        # For it to work globally in the dialog when the table has focus,
         # we might need to catch it in keyPressEvent of the dialog or table.
-        self.undoButton.setShortcut(QKeySequence("Ctrl+Z")) 
+        self.undoButton.setShortcut(QKeySequence("Ctrl+Z"))
         # Close on Escape is usually default for QDialog.accepted/rejected
         # self.closeButton.setShortcut(QKeySequence(Qt.Key.Key_Escape)) # QDialog handles Esc for reject/close
+
+    def toggle_advanced_filters(self, checked: bool):
+        """Show or hide advanced filter controls."""
+        self.advanced_container.setVisible(checked)
+        self.toggleAdvancedButton.setArrowType(
+            Qt.ArrowType.DownArrow if checked else Qt.ArrowType.RightArrow
+        )
+        self.toggleAdvancedButton.setText(
+            "Hide advanced filters" if checked else "Show advanced filters"
+        )
+        # Update layout geometry so the table can reclaim space when collapsed
+        self.filters_group.updateGeometry()
+        self.historyTable.updateGeometry()
+
+    def reset_filters(self):
+        """Reset all filter widgets to their default state and reapply filters."""
+        widgets = [self.dateFilter, self.folderFilter, self.actionFilter, self.severityFilter]
+        for widget in widgets:
+            widget.blockSignals(True)
+
+        try:
+            self.dateFilter.setDateTime(self._default_start_date)
+            self.folderFilter.clear()
+            self.actionFilter.setCurrentIndex(0)
+            self.severityFilter.setCurrentIndex(0)
+        finally:
+            for widget in widgets:
+                widget.blockSignals(False)
+
+        self.apply_filters()
 
     def keyPressEvent(self, event):
         """Handle key presses for actions like Escape."""
