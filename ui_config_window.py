@@ -1,6 +1,7 @@
 import os
 import sys
 import queue
+import re
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QListWidget, QLineEdit,
     QSpinBox, QLabel, QTextEdit, QFileDialog, QMessageBox, QListWidgetItem, QComboBox, QCheckBox,
@@ -8,6 +9,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtGui import QDesktopServices, QKeySequence, QAction # Import QAction
 from PyQt6.QtCore import QTimer, Qt, QUrl, pyqtSlot
+from pathlib import Path
 
 from config_manager import ConfigManager
 from worker import MonitoringWorker
@@ -22,6 +24,7 @@ from constants import (
 
 from undo_manager import UndoManager # Added for Undo functionality
 from ui_undo_dialog import UndoDialog # Added for Undo functionality
+from utils import get_preview_matches, resolve_destination_for_preview
 
 LOG_QUEUE_CHECK_INTERVAL_MS = 250
 
@@ -181,6 +184,14 @@ class ConfigWindow(QWidget):
         destination_layout.addWidget(self.destination_browse_button)
         action_form.addRow("Destination:", destination_widget)
 
+        preview_button_row = QHBoxLayout()
+        preview_button_row.addStretch()
+        self.preview_rule_button = QPushButton("Preview matches")
+        self.preview_rule_button.setEnabled(False)
+        self.preview_rule_button.setToolTip("Show a sample of files matching the current rule settings.")
+        preview_button_row.addWidget(self.preview_rule_button)
+        action_form.addRow(preview_button_row)
+
         self.enabledCheckbox = QCheckBox("Rule Enabled")
         self.enabledCheckbox.setEnabled(False)
         self.enabledCheckbox.setToolTip("Temporarily disable this rule without removing it.")
@@ -250,6 +261,7 @@ class ConfigWindow(QWidget):
         self.destination_browse_button.clicked.connect(self.browse_destination_folder)
         self.enabledCheckbox.stateChanged.connect(self.save_rule_changes)
         # self.apply_template_button.clicked.connect(self.apply_template) # Will be handled by QMenu
+        self.preview_rule_button.clicked.connect(self.preview_rule)
         self.start_button.clicked.connect(self.start_monitoring)
         self.stop_button.clicked.connect(self.stop_monitoring)
         self.settings_button.clicked.connect(self.open_settings_dialog)
@@ -437,6 +449,7 @@ class ConfigWindow(QWidget):
                 self.destination_lineedit.setEnabled(True)
                 self.destination_browse_button.setEnabled(True)
                 self.enabledCheckbox.setEnabled(True)
+                self.preview_rule_button.setEnabled(True)
                 self.exclusion_list_widget.setEnabled(True)
                 self.add_exclusion_button.setEnabled(True)
                 self.remove_exclusion_button.setEnabled(True)
@@ -462,6 +475,7 @@ class ConfigWindow(QWidget):
                 self.destination_lineedit.setEnabled(False)
                 self.destination_browse_button.setEnabled(False)
                 self.enabledCheckbox.setEnabled(False)
+                self.preview_rule_button.setEnabled(False)
                 self.age_spinbox.setValue(0)
                 self.pattern_lineedit.clear()
                 self.rule_logic_combo.setCurrentIndex(0)
@@ -485,6 +499,7 @@ class ConfigWindow(QWidget):
             self.destination_lineedit.setEnabled(False)
             self.destination_browse_button.setEnabled(False)
             self.enabledCheckbox.setEnabled(False)
+            self.preview_rule_button.setEnabled(False)
             self.age_spinbox.setValue(0)
             self.pattern_lineedit.clear()
             self.rule_logic_combo.setCurrentIndex(0)
@@ -640,7 +655,126 @@ class ConfigWindow(QWidget):
         self.add_exclusion_button.setEnabled(can_edit_rules)
         self.remove_exclusion_button.setEnabled(can_edit_rules)
         self.exclusion_help_button.setEnabled(can_edit_rules) # Enable/disable help button
+        self.preview_rule_button.setEnabled(can_edit_rules)
         self._update_destination_enabled_state(base_enabled=can_edit_rules)
+
+    def _get_selected_folder_path(self) -> Path | None:
+        """Return the Path of the currently selected monitored folder."""
+        current_item = self.folder_list_widget.currentItem()
+        if not current_item:
+            return None
+
+        path = Path(current_item.text())
+        return path
+
+    @pyqtSlot()
+    def preview_rule(self):
+        """Show a dialog with a preview of files matching the current rule configuration."""
+
+        folder_path = self._get_selected_folder_path()
+        if folder_path is None:
+            QMessageBox.information(self, "No Folder Selected", "Select a folder to preview its rule.")
+            return
+
+        if not folder_path.exists() or not folder_path.is_dir():
+            QMessageBox.warning(
+                self,
+                "Folder Unavailable",
+                (
+                    "The selected folder does not exist or is not accessible.\n"
+                    "Please verify the folder path before previewing the rule."
+                ),
+            )
+            return
+
+        age_days = self.age_spinbox.value()
+        pattern = self.pattern_lineedit.text().strip() or "*.*"
+        use_regex = self.useRegexCheckbox.isChecked()
+        rule_logic = self.rule_logic_combo.currentText() or "OR"
+        destination_text = self.destination_lineedit.text().strip()
+        action_value = ACTION_TEXT_TO_VALUE.get(self.actionComboBox.currentText(), "move")
+
+        if use_regex and pattern:
+            try:
+                re.compile(pattern)
+            except re.error as exc:
+                QMessageBox.critical(
+                    self,
+                    "Invalid Regular Expression",
+                    f"The provided pattern is not a valid regular expression:\n{exc}",
+                )
+                return
+
+        if action_value in {"move", "copy"} and destination_text:
+            try:
+                base_destination = resolve_destination_for_preview(folder_path, destination_text)
+            except (ValueError, NotADirectoryError) as exc:
+                QMessageBox.critical(self, "Destination Error", str(exc))
+                return
+            except Exception as exc:  # Catch unexpected resolution errors
+                QMessageBox.critical(
+                    self,
+                    "Destination Error",
+                    f"Unable to resolve the destination folder:\n{exc}",
+                )
+                return
+
+            if not base_destination.exists():
+                QMessageBox.warning(
+                    self,
+                    "Destination Missing",
+                    (
+                        "The resolved destination folder does not exist:\n"
+                        f"{base_destination}\n"
+                        "Please create the folder or adjust the destination template."
+                    ),
+                )
+                return
+
+        try:
+            matches = get_preview_matches(
+                folder_path,
+                age_days,
+                pattern,
+                use_regex,
+                rule_logic,
+            )
+        except (NotADirectoryError, PermissionError) as exc:
+            QMessageBox.critical(self, "Preview Failed", str(exc))
+            return
+        except Exception as exc:  # Catch-all for unexpected issues
+            QMessageBox.critical(
+                self,
+                "Preview Failed",
+                f"An unexpected error occurred while previewing the rule:\n{exc}",
+            )
+            return
+
+        dialog = QMessageBox(self)
+        dialog.setWindowTitle("Rule Preview")
+        dialog.setIcon(QMessageBox.Icon.Information)
+
+        if matches:
+            relative_paths = []
+            for match in matches:
+                try:
+                    relative_paths.append(str(match.relative_to(folder_path)))
+                except ValueError:
+                    relative_paths.append(str(match))
+
+            displayed_count = len(relative_paths)
+            dialog.setText(
+                (
+                    f"Found {displayed_count} matching file(s) in {folder_path}.\n"
+                    "Showing up to 10 results."
+                )
+            )
+            dialog.setInformativeText("\n".join(relative_paths))
+        else:
+            dialog.setText("No files currently match the configured rule.")
+            dialog.setInformativeText(f"Folder checked: {folder_path}")
+
+        dialog.exec()
 
 
     @pyqtSlot()
