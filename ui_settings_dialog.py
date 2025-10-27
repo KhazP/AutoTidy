@@ -1,5 +1,5 @@
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from string import Formatter
 
@@ -181,7 +181,14 @@ class SettingsDialog(QDialog):
         interval_minutes_layout.addWidget(self.intervalMinutesSpinBox)
         interval_minutes_layout.addWidget(interval_info_label)
 
+        self.nextRunStatusLabel = QLabel()
+        self.nextRunStatusLabel.setObjectName("nextRunStatusLabel")
+        self.nextRunStatusLabel.setStyleSheet("color: grey; font-size: 9pt;")
+        self.nextRunStatusLabel.setWordWrap(True)
+        self.nextRunStatusLabel.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+
         scheduling_layout.addLayout(interval_minutes_layout)
+        scheduling_layout.addWidget(self.nextRunStatusLabel)
         scheduling_group.setLayout(scheduling_layout)
         layout.addWidget(scheduling_group)
 
@@ -220,6 +227,10 @@ class SettingsDialog(QDialog):
 
         self.archivePathTemplateInput.textChanged.connect(self._on_archive_template_changed)
         self._update_archive_template_preview(self.archivePathTemplateInput.text())
+
+        self.intervalMinutesSpinBox.valueChanged.connect(self._update_next_run_status_label)
+        self.dryRunModeCheckbox.stateChanged.connect(self._update_next_run_status_label)
+        self._update_next_run_status_label()
 
 
         # --- Version Label ---
@@ -373,6 +384,22 @@ class SettingsDialog(QDialog):
 
         return os.fspath(preview_path), None, using_default_template
 
+    def _update_next_run_status_label(self, *_):
+        """Refresh the projected scheduling status label."""
+        interval_minutes = self.intervalMinutesSpinBox.value()
+        next_run_time = datetime.now() + timedelta(minutes=interval_minutes)
+        interval_phrase = "1 minute" if interval_minutes == 1 else f"{interval_minutes} minutes"
+        formatted_time = next_run_time.strftime("%b %d, %Y %I:%M %p")
+
+        if self.dryRunModeCheckbox.isChecked():
+            status_text = (
+                f"Dry Run Mode active. Next simulated run in {interval_phrase} at {formatted_time}."
+            )
+        else:
+            status_text = f"Next run in {interval_phrase} at {formatted_time}."
+
+        self.nextRunStatusLabel.setText(status_text)
+
     @pyqtSlot()
     def accept(self):
         """Handle OK button click: save settings and apply autostart."""
@@ -496,4 +523,5 @@ class SettingsDialog(QDialog):
             self.notificationLevelComboBox.setCurrentIndex(level_index)
 
         self._update_archive_template_preview(self.archivePathTemplateInput.text())
+        self._update_next_run_status_label()
         self.autostart_checkbox.setFocus()
