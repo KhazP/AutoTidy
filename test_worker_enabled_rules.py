@@ -26,10 +26,11 @@ class SingleCycleStopEvent:
 
 
 class MockConfigManager:
-    def __init__(self, monitored_path: Path, config_dir: Path, enabled: bool):
+    def __init__(self, monitored_path: Path, config_dir: Path, enabled: bool, destination: str = ""):
         self._monitored_path = monitored_path
         self._config_dir = config_dir
         self._enabled = enabled
+        self._destination = destination
 
     def get_monitored_folders(self):
         return [{
@@ -39,7 +40,7 @@ class MockConfigManager:
             'use_regex': False,
             'rule_logic': 'OR',
             'action': 'move',
-            'destination_folder': '',
+            'destination_folder': self._destination,
             'exclusions': [],
             'enabled': self._enabled,
         }]
@@ -100,6 +101,35 @@ class TestMonitoringWorkerEnabledRules(TestCase):
 
             process_mock = self._run_worker_once(config_manager)
             self.assertEqual(process_mock.call_count, 0, "Disabled rules should be skipped entirely")
+
+    def test_destination_override_passed_to_process_file_action(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            base_path = Path(tmp_dir)
+            monitored_path = base_path / "monitored"
+            config_dir = base_path / "config"
+            destination_path = base_path / "custom_dest"
+            monitored_path.mkdir()
+            config_dir.mkdir()
+            destination_path.mkdir()
+
+            (monitored_path / "example.txt").write_text("content")
+
+            config_manager = MockConfigManager(
+                monitored_path,
+                config_dir,
+                enabled=True,
+                destination=str(destination_path),
+            )
+
+            process_mock = self._run_worker_once(config_manager)
+            self.assertGreater(process_mock.call_count, 0, "Processing should occur for enabled rules")
+            for call in process_mock.call_args_list:
+                self.assertGreaterEqual(len(call.args), 11, "Destination argument should be provided to process_file_action")
+                self.assertEqual(
+                    call.args[10],
+                    str(destination_path),
+                    "Worker should forward updated destination to process_file_action",
+                )
 
 
 if __name__ == '__main__':

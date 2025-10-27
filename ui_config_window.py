@@ -1,3 +1,4 @@
+import os
 import sys
 import queue
 from PyQt6.QtWidgets import (
@@ -23,6 +24,15 @@ from undo_manager import UndoManager # Added for Undo functionality
 from ui_undo_dialog import UndoDialog # Added for Undo functionality
 
 LOG_QUEUE_CHECK_INTERVAL_MS = 250
+
+ACTION_VALUE_TO_TEXT = {
+    "move": "Move",
+    "copy": "Copy",
+    "delete_to_trash": "Delete to Trash",
+    "delete_permanently": "Delete Permanently",
+}
+
+ACTION_TEXT_TO_VALUE = {v: k for k, v in ACTION_VALUE_TO_TEXT.items()}
 
 class ConfigWindow(QWidget):
     """Main configuration window for AutoTidy."""
@@ -115,6 +125,20 @@ class ConfigWindow(QWidget):
         self.actionComboBox.setToolTip("Action to perform on matching files.")
         rule_layout.addWidget(self.actionComboBox)
 
+        rule_layout.addWidget(QLabel("Destination:"))
+        self.destination_lineedit = QLineEdit()
+        self.destination_lineedit.setPlaceholderText("Leave blank to use archive template")
+        self.destination_lineedit.setEnabled(False)
+        self.destination_lineedit.setToolTip(
+            "Destination folder or template for move/copy actions. Supports environment variables and placeholders."
+        )
+        rule_layout.addWidget(self.destination_lineedit)
+
+        self.destination_browse_button = QPushButton("Browse…")
+        self.destination_browse_button.setEnabled(False)
+        self.destination_browse_button.setToolTip("Choose a destination folder for move/copy actions.")
+        rule_layout.addWidget(self.destination_browse_button)
+
         self.enabledCheckbox = QCheckBox("Rule Enabled")
         self.enabledCheckbox.setEnabled(False)
         self.enabledCheckbox.setToolTip("Temporarily disable this rule without removing it.")
@@ -178,6 +202,8 @@ class ConfigWindow(QWidget):
         self.useRegexCheckbox.stateChanged.connect(self.save_rule_changes) # Connect checkbox
         self.rule_logic_combo.currentIndexChanged.connect(self.save_rule_changes) # Connect new combo box
         self.actionComboBox.currentIndexChanged.connect(self.save_rule_changes) # Connect action combo box
+        self.destination_lineedit.editingFinished.connect(self.save_rule_changes)
+        self.destination_browse_button.clicked.connect(self.browse_destination_folder)
         self.enabledCheckbox.stateChanged.connect(self.save_rule_changes)
         # self.apply_template_button.clicked.connect(self.apply_template) # Will be handled by QMenu
         self.start_button.clicked.connect(self.start_monitoring)
@@ -318,6 +344,7 @@ class ConfigWindow(QWidget):
                 self.rule_logic_combo.blockSignals(True)
                 self.useRegexCheckbox.blockSignals(True)
                 self.actionComboBox.blockSignals(True) # Block actionComboBox signals
+                self.destination_lineedit.blockSignals(True)
                 self.enabledCheckbox.blockSignals(True)
                 self.exclusion_list_widget.blockSignals(True) # Block exclusion list signals
 
@@ -327,13 +354,9 @@ class ConfigWindow(QWidget):
                 self.useRegexCheckbox.setChecked(rule.get('use_regex', False)) # Load use_regex
 
                 action_value = rule.get('action', 'move')
-                action_display_map = {
-                    "move": "Move",
-                    "copy": "Copy",
-                    "delete_to_trash": "Delete to Trash",
-                    "delete_permanently": "Delete Permanently"
-                }
-                self.actionComboBox.setCurrentText(action_display_map.get(action_value, "Move"))
+                self.actionComboBox.setCurrentText(ACTION_VALUE_TO_TEXT.get(action_value, "Move"))
+
+                self.destination_lineedit.setText(rule.get('destination_folder', ''))
 
                 self.enabledCheckbox.setChecked(rule.get('enabled', True))
 
@@ -349,6 +372,8 @@ class ConfigWindow(QWidget):
                 self.rule_logic_combo.setEnabled(True)
                 self.useRegexCheckbox.setEnabled(True) # Enable checkbox
                 self.actionComboBox.setEnabled(True) # Enable actionComboBox
+                self.destination_lineedit.setEnabled(True)
+                self.destination_browse_button.setEnabled(True)
                 self.enabledCheckbox.setEnabled(True)
                 self.exclusion_list_widget.setEnabled(True)
                 self.add_exclusion_button.setEnabled(True)
@@ -361,8 +386,10 @@ class ConfigWindow(QWidget):
                 self.rule_logic_combo.blockSignals(False)
                 self.useRegexCheckbox.blockSignals(False)
                 self.actionComboBox.blockSignals(False) # Unblock actionComboBox signals
+                self.destination_lineedit.blockSignals(False)
                 self.enabledCheckbox.blockSignals(False)
                 self.exclusion_list_widget.blockSignals(False) # Unblock exclusion list signals
+                self._update_destination_enabled_state(base_enabled=True)
             else:
                 # Should not happen if list is synced with config, but handle defensively
                 self.age_spinbox.setEnabled(False)
@@ -370,18 +397,22 @@ class ConfigWindow(QWidget):
                 self.rule_logic_combo.setEnabled(False)
                 self.useRegexCheckbox.setEnabled(False) # Disable checkbox
                 self.actionComboBox.setEnabled(False) # Disable actionComboBox
+                self.destination_lineedit.setEnabled(False)
+                self.destination_browse_button.setEnabled(False)
                 self.enabledCheckbox.setEnabled(False)
                 self.age_spinbox.setValue(0)
                 self.pattern_lineedit.clear()
                 self.rule_logic_combo.setCurrentIndex(0)
                 self.useRegexCheckbox.setChecked(False) # Uncheck checkbox
                 self.actionComboBox.setCurrentIndex(0) # Reset actionComboBox
+                self.destination_lineedit.clear()
                 self.enabledCheckbox.setChecked(False)
                 self.exclusion_list_widget.clear() # Clear exclusions
                 self.exclusion_list_widget.setEnabled(False)
                 self.add_exclusion_button.setEnabled(False)
                 self.remove_exclusion_button.setEnabled(False)
                 self.exclusion_help_button.setEnabled(False) # Disable help button
+                self._update_destination_enabled_state(base_enabled=False)
         else:
             # No item selected, disable all rule inputs
             self.age_spinbox.setEnabled(False)
@@ -389,18 +420,38 @@ class ConfigWindow(QWidget):
             self.rule_logic_combo.setEnabled(False)
             self.useRegexCheckbox.setEnabled(False) # Disable checkbox
             self.actionComboBox.setEnabled(False) # Disable actionComboBox
+            self.destination_lineedit.setEnabled(False)
+            self.destination_browse_button.setEnabled(False)
             self.enabledCheckbox.setEnabled(False)
             self.age_spinbox.setValue(0)
             self.pattern_lineedit.clear()
             self.rule_logic_combo.setCurrentIndex(0)
             self.useRegexCheckbox.setChecked(False)
             self.actionComboBox.setCurrentIndex(0) # Reset actionComboBox
+            self.destination_lineedit.clear()
             self.enabledCheckbox.setChecked(False)
             self.exclusion_list_widget.clear() # Clear exclusions
             self.exclusion_list_widget.setEnabled(False)
             self.add_exclusion_button.setEnabled(False)
             self.remove_exclusion_button.setEnabled(False)
             self.exclusion_help_button.setEnabled(False) # Disable help button
+            self._update_destination_enabled_state(base_enabled=False)
+
+    def _update_destination_enabled_state(self, base_enabled: bool | None = None):
+        """Enable destination controls when editing is allowed and action supports it."""
+        if base_enabled is None:
+            base_enabled = self.destination_lineedit.isEnabled()
+
+        current_item = self.folder_list_widget.currentItem()
+        is_running = self.worker_status in {"Running", "Dry Run Active"}
+        action_text = self.actionComboBox.currentText() if self.actionComboBox else "Move"
+        action_value = ACTION_TEXT_TO_VALUE.get(action_text, "move")
+
+        can_edit_rules = base_enabled and current_item is not None and not is_running
+        allow_destination = can_edit_rules and action_value in {"move", "copy"}
+
+        self.destination_lineedit.setEnabled(allow_destination)
+        self.destination_browse_button.setEnabled(allow_destination)
 
 
     @pyqtSlot()
@@ -415,13 +466,7 @@ class ConfigWindow(QWidget):
             use_regex = self.useRegexCheckbox.isChecked()
 
             action_text = self.actionComboBox.currentText()
-            action_map = {
-                "Move": "move",
-                "Copy": "copy",
-                "Delete to Trash": "delete_to_trash",
-                "Delete Permanently": "delete_permanently"
-            }
-            action_value = action_map.get(action_text, "move")
+            action_value = ACTION_TEXT_TO_VALUE.get(action_text, "move")
 
             # Show warning for permanent delete
             if action_value == "delete_permanently":
@@ -449,6 +494,13 @@ class ConfigWindow(QWidget):
                     exclusions.append(item.text())
 
             rule_enabled = self.enabledCheckbox.isChecked()
+            destination_text = self.destination_lineedit.text().strip()
+
+            can_edit_rules = (
+                self.folder_list_widget.currentItem() is not None
+                and self.worker_status not in {"Running", "Dry Run Active"}
+            )
+            self._update_destination_enabled_state(base_enabled=can_edit_rules)
 
             if self.config_manager.update_folder_rule(
                 path,
@@ -458,12 +510,27 @@ class ConfigWindow(QWidget):
                 use_regex,
                 action_value,
                 exclusions, # Pass exclusions
+                destination_folder=destination_text,
                 enabled=rule_enabled
             ):
                 self.log_queue.put(f"INFO: Updated rules for {path}")
             else:
                 # Should not happen if item exists
                 self.log_queue.put(f"ERROR: Failed to update rules for {path} (not found in config?)")
+
+    @pyqtSlot()
+    def browse_destination_folder(self):
+        """Open a dialog to select a destination folder for move/copy actions."""
+        if not self.folder_list_widget.currentItem():
+            QMessageBox.information(self, "No Folder Selected", "Select a folder before choosing a destination.")
+            return
+
+        existing_value = self.destination_lineedit.text().strip()
+        start_dir = existing_value or self.folder_list_widget.currentItem().text()
+        directory = QFileDialog.getExistingDirectory(self, "Select Destination Folder", start_dir)
+        if directory:
+            self.destination_lineedit.setText(directory)
+            self.save_rule_changes()
 
     @pyqtSlot()
     def open_settings_dialog(self):
@@ -510,6 +577,7 @@ class ConfigWindow(QWidget):
         self.add_exclusion_button.setEnabled(can_edit_rules)
         self.remove_exclusion_button.setEnabled(can_edit_rules)
         self.exclusion_help_button.setEnabled(can_edit_rules) # Enable/disable help button
+        self._update_destination_enabled_state(base_enabled=can_edit_rules)
 
 
     @pyqtSlot()
@@ -699,7 +767,6 @@ class ConfigWindow(QWidget):
                             continue
                         
                         # Expand environment variables in paths
-                        import os
                         expanded_folder_path = os.path.expandvars(folder_path)
                         expanded_dest_folder = os.path.expandvars(rule_def.get('destination_folder', ''))
 
