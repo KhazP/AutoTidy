@@ -49,12 +49,14 @@ class HistoryManager:
 
         # Ensure severity is present
         if "severity" not in data:
-            if data.get("status") == constants.STATUS_FAILURE:
+            status = data.get("status")
+            if status == constants.STATUS_FAILURE:
                 data["severity"] = "ERROR"
-            # Add elif for WARNING if a specific status maps to it
-            # elif data.get("status") == constants.STATUS_WARNING: # Example
-            #     data["severity"] = "WARNING"
-            else: # Default for SUCCESS or other statuses
+            elif status == constants.STATUS_SUCCESS:
+                data["severity"] = "INFO"
+            elif status:  # Any other defined status is treated as a warning-level entry
+                data["severity"] = "WARNING"
+            else:  # Default for missing status information
                 data["severity"] = "INFO"
 
         try:
