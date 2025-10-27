@@ -5,6 +5,8 @@ import os
 import sys
 from pathlib import Path
 import uuid
+import fnmatch
+import re
 
 from config_manager import ConfigManager
 from utils import check_file, process_file_action
@@ -52,6 +54,7 @@ class MonitoringWorker(threading.Thread):
                     age_days = folder_config.get('age_days', 0)
                     pattern = folder_config.get('pattern', '*.*')
                     use_regex = folder_config.get('use_regex', False)
+                    exclusions = folder_config.get('exclusions', [])
                     rule_logic = folder_config.get('rule_logic', 'OR')
                     action_to_perform = folder_config.get('action', 'move') # Get action
                     destination_folder = folder_config.get('destination_folder', '')
@@ -77,11 +80,34 @@ class MonitoringWorker(threading.Thread):
                     files_processed_this_folder = 0 # Initialize for this folder
                     try:
                         for item in monitored_path.iterdir():
-                             if self._stop_event.is_set():
+                            if self._stop_event.is_set():
                                 break
 
-                             if item.is_file():
+                            if item.is_file():
                                 if check_file(item, age_days, pattern, use_regex, rule_logic):
+                                    is_excluded = False
+                                    for exclusion in exclusions:
+                                        if not exclusion:
+                                            continue
+                                        try:
+                                            if use_regex:
+                                                if re.fullmatch(exclusion, item.name):
+                                                    is_excluded = True
+                                                    break
+                                            else:
+                                                if fnmatch.fnmatch(item.name, exclusion):
+                                                    is_excluded = True
+                                                    break
+                                        except re.error as e:
+                                            self.log_queue.put(
+                                                f"ERROR: Invalid exclusion pattern '{exclusion}' for {monitored_path}: {e}"
+                                            )
+                                            continue
+
+                                    if is_excluded:
+                                        self.log_queue.put(f"INFO: Skipping excluded file: {item.name}")
+                                        continue
+
                                     success, message = process_file_action(
                                         item,
                                         monitored_path,
