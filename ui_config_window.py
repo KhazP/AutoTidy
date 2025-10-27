@@ -536,7 +536,8 @@ class ConfigWindow(QWidget):
     def open_settings_dialog(self):
         """Open the settings dialog window."""
         dialog = SettingsDialog(self.config_manager, self) # Pass config manager and parent
-        dialog.exec() # Show the dialog modally        self._update_ui_for_status_and_mode() # Refresh UI after settings change
+        dialog.exec() # Show the dialog modally
+        self._update_ui_for_status_and_mode() # Refresh UI after settings change
 
     @pyqtSlot()
     def open_undo_dialog(self):
