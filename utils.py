@@ -29,7 +29,7 @@ def check_file(
     """
     try:
         # 1. Check Age
-        age_match = False
+        age_match = age_days <= 0
         if age_days > 0:
             mod_time = file_path.stat().st_mtime
             age_threshold = datetime.now() - timedelta(days=age_days)
