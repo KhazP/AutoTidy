@@ -1,6 +1,7 @@
 from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QCheckBox, QPushButton, QDialogButtonBox,
-    QWidget, QMessageBox, QLabel, QSpinBox, QLineEdit, QComboBox # Added QComboBox
+    QDialog, QVBoxLayout, QHBoxLayout, QCheckBox, QDialogButtonBox,
+    QWidget, QMessageBox, QLabel, QSpinBox, QLineEdit, QComboBox, QGroupBox,
+    QFormLayout
 )
 from PyQt6.QtGui import QKeySequence # Added for shortcuts
 from PyQt6.QtCore import pyqtSlot, Qt # Added Qt
@@ -39,12 +40,23 @@ class SettingsDialog(QDialog):
     def _init_ui(self):
         """Initialize UI elements and layout."""
         layout = QVBoxLayout(self)
+        layout.setSpacing(16)
 
-        # --- Autostart Checkbox ---
-        self.autostart_checkbox = QCheckBox("Start AutoTidy automatically on system &login") # Added &
+        # --- Startup & Mode Section ---
+        startup_group = QGroupBox("Startup && Mode")
+        startup_layout = QVBoxLayout()
+        startup_layout.setSpacing(6)
+
+        self.autostart_checkbox = QCheckBox("Start AutoTidy at &login")
         self.autostart_checkbox.setChecked(self.initial_start_on_login)
         self.autostart_checkbox.setToolTip("If checked, AutoTidy will start when you log into your computer.")
-        layout.addWidget(self.autostart_checkbox)
+        startup_layout.addWidget(self.autostart_checkbox)
+
+        autostart_helper = QLabel("Launch AutoTidy automatically whenever you sign into your account.")
+        autostart_helper.setWordWrap(True)
+        autostart_helper.setStyleSheet("color: grey;")
+        autostart_helper.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        startup_layout.addWidget(autostart_helper)
 
         self._autostart_supported = is_autostart_supported()
         if not self._autostart_supported:
@@ -53,11 +65,22 @@ class SettingsDialog(QDialog):
                 "Autostart configuration is not supported on this platform."
             )
 
-        # --- Dry Run Mode Checkbox ---
-        self.dryRunModeCheckbox = QCheckBox("Enable &Dry Run Mode (Simulate actions, no files will be changed)") # Added &
+        self.dryRunModeCheckbox = QCheckBox("Enable &Dry Run Mode")
         self.dryRunModeCheckbox.setChecked(self.initial_dry_run_mode)
-        self.dryRunModeCheckbox.setToolTip("If checked, AutoTidy will log actions it would take but won't actually move/copy/delete files.")
-        layout.addWidget(self.dryRunModeCheckbox)
+        self.dryRunModeCheckbox.setToolTip(
+            "If checked, AutoTidy will log actions it would take but won't actually "
+            "move/copy/delete files."
+        )
+        startup_layout.addWidget(self.dryRunModeCheckbox)
+
+        dry_run_helper = QLabel("Simulate every cleanup and capture details without touching your files.")
+        dry_run_helper.setWordWrap(True)
+        dry_run_helper.setStyleSheet("color: grey;")
+        dry_run_helper.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        startup_layout.addWidget(dry_run_helper)
+
+        startup_group.setLayout(startup_layout)
+        layout.addWidget(startup_group)
 
         # --- Show Notifications Checkbox --- (This will be replaced by the ComboBox)
         # self.showNotificationsCheckbox = QCheckBox("Show desktop &notifications for completed scans")
@@ -65,15 +88,22 @@ class SettingsDialog(QDialog):
         # self.showNotificationsCheckbox.setToolTip("If checked, a desktop notification will be shown when a scan cycle completes and files are processed.")
         # layout.addWidget(self.showNotificationsCheckbox)
 
-        # --- Notification Level ComboBox ---
-        notification_layout = QHBoxLayout()
-        notification_label = QLabel("Notification &Level:")
+        # --- Notifications Section ---
+        notifications_group = QGroupBox("Notifications")
+        notifications_layout = QFormLayout()
+        notifications_layout.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
+        notifications_layout.setVerticalSpacing(6)
+
+        notification_label = QLabel("Notification &level:")
         self.notificationLevelComboBox = QComboBox()
-        self.notificationLevelComboBox.addItem("None (No notifications or logs)", NOTIFICATION_LEVEL_NONE)
-        self.notificationLevelComboBox.addItem("Errors Only (Notify on errors)", NOTIFICATION_LEVEL_ERROR)
-        self.notificationLevelComboBox.addItem("Summary (Notify after scan, show errors)", NOTIFICATION_LEVEL_SUMMARY)
-        self.notificationLevelComboBox.addItem("All (Detailed logs and all notifications)", NOTIFICATION_LEVEL_ALL)
-        self.notificationLevelComboBox.setToolTip("Control how much information AutoTidy provides through logs and desktop notifications.")
+        self.notificationLevelComboBox.addItem("None", NOTIFICATION_LEVEL_NONE)
+        self.notificationLevelComboBox.addItem("Errors only", NOTIFICATION_LEVEL_ERROR)
+        self.notificationLevelComboBox.addItem("Summary", NOTIFICATION_LEVEL_SUMMARY)
+        self.notificationLevelComboBox.addItem("All activity", NOTIFICATION_LEVEL_ALL)
+        self.notificationLevelComboBox.setToolTip(
+            "Control how much information AutoTidy provides through logs and desktop notifications."
+        )
+        notification_label.setBuddy(self.notificationLevelComboBox)
         # Set initial value
         current_level_index = self.notificationLevelComboBox.findData(self.initial_notification_level)
         if current_level_index != -1:
@@ -83,10 +113,18 @@ class SettingsDialog(QDialog):
             if default_level_index != -1:
                 self.notificationLevelComboBox.setCurrentIndex(default_level_index)
 
-        notification_layout.addWidget(notification_label)
-        notification_layout.addWidget(self.notificationLevelComboBox)
-        layout.addLayout(notification_layout)
-        # -----------------------------------
+        notifications_layout.addRow(notification_label, self.notificationLevelComboBox)
+
+        notification_helper = QLabel(
+            "Choose when AutoTidy should alert you: never, only on errors, after each scan, or for every step."
+        )
+        notification_helper.setWordWrap(True)
+        notification_helper.setStyleSheet("color: grey;")
+        notification_helper.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        notifications_layout.addRow(QLabel(), notification_helper)
+
+        notifications_group.setLayout(notifications_layout)
+        layout.addWidget(notifications_group)
 
         # ----------------------------
 
@@ -103,9 +141,10 @@ class SettingsDialog(QDialog):
         # interval_layout.addWidget(self.interval_spinbox)
         # layout.addLayout(interval_layout)
 
-        # --- New Scheduling Section ---
-        scheduling_label = QLabel("Scheduling:")
-        layout.addWidget(scheduling_label)
+        # --- Scheduling Section ---
+        scheduling_group = QGroupBox("Scheduling")
+        scheduling_layout = QVBoxLayout()
+        scheduling_layout.setSpacing(6)
 
         schedule_mode_description = QLabel(
             "Interval scheduling is currently the only available mode."
@@ -113,17 +152,18 @@ class SettingsDialog(QDialog):
         schedule_mode_description.setWordWrap(True)
         schedule_mode_description.setStyleSheet("color: grey;")
         schedule_mode_description.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        layout.addWidget(schedule_mode_description)
+        scheduling_layout.addWidget(schedule_mode_description)
 
         interval_minutes_layout = QHBoxLayout()
         interval_minutes_layout.setContentsMargins(0, 0, 0, 0)
+        interval_minutes_layout.setSpacing(8)
         self.intervalMinutesLabel = QLabel("Interval (minutes):")
         self.intervalMinutesSpinBox = QSpinBox()
         self.intervalMinutesSpinBox.setRange(1, 10080) # 1 min to 1 week (7 * 24 * 60)
         self.intervalMinutesSpinBox.setSuffix(" minutes")
         self.intervalMinutesSpinBox.setValue(self.initial_schedule_config.get('interval_minutes', 60))
         self.intervalMinutesSpinBox.setToolTip("How often AutoTidy should check folders for files to organize.")
-        
+
         interval_info_label = QLabel("ℹ️")
         interval_info_label.setToolTip(
             "Dry Run Mode still follows the selected interval; AutoTidy logs actions instead of modifying files."
@@ -134,21 +174,36 @@ class SettingsDialog(QDialog):
         interval_minutes_layout.addWidget(self.intervalMinutesLabel)
         interval_minutes_layout.addWidget(self.intervalMinutesSpinBox)
         interval_minutes_layout.addWidget(interval_info_label)
-        layout.addLayout(interval_minutes_layout)
-        # --- End New Scheduling Section ---
 
-        # --- Archive Path Template ---
+        scheduling_layout.addLayout(interval_minutes_layout)
+        scheduling_group.setLayout(scheduling_layout)
+        layout.addWidget(scheduling_group)
+
+        # --- Archiving Section ---
+        archiving_group = QGroupBox("Archiving")
+        archiving_layout = QVBoxLayout()
+        archiving_layout.setSpacing(6)
+
         archive_template_label = QLabel("Archive path template:")
-        layout.addWidget(archive_template_label)
         self.archivePathTemplateInput = QLineEdit()
         self.archivePathTemplateInput.setText(self.initial_archive_template)
-        self.archivePathTemplateInput.setToolTip("Define the subfolder structure for archived files. Use placeholders like {YYYY}-{MM}-{DD}.")
-        layout.addWidget(self.archivePathTemplateInput)
+        self.archivePathTemplateInput.setToolTip(
+            "Define the subfolder structure for archived files. Use placeholders like {YYYY}-{MM}-{DD}."
+        )
+
+        archiving_layout.addWidget(archive_template_label)
+        archiving_layout.addWidget(self.archivePathTemplateInput)
+
         archive_template_desc_label = QLabel(
             "Placeholders: {YYYY}, {MM}, {DD}, {FILENAME}, {EXT}, {ORIGINAL_FOLDER_NAME}"
         )
         archive_template_desc_label.setStyleSheet("font-size: 9pt; color: grey;") # Optional styling
-        layout.addWidget(archive_template_desc_label)
+        archive_template_desc_label.setWordWrap(True)
+        archive_template_desc_label.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        archiving_layout.addWidget(archive_template_desc_label)
+
+        archiving_group.setLayout(archiving_layout)
+        layout.addWidget(archiving_group)
 
 
         # --- Version Label ---
@@ -176,7 +231,8 @@ class SettingsDialog(QDialog):
         button_box.rejected.connect(self.reject) # Connect Cancel to reject()
         layout.addWidget(button_box)
 
-        # Ensure tab order flows naturally through scheduling controls
+        # Ensure tab order flows naturally through grouped controls
+        self.setTabOrder(self.autostart_checkbox, self.dryRunModeCheckbox)
         self.setTabOrder(self.dryRunModeCheckbox, self.notificationLevelComboBox)
         self.setTabOrder(self.notificationLevelComboBox, self.intervalMinutesSpinBox)
         self.setTabOrder(self.intervalMinutesSpinBox, self.archivePathTemplateInput)

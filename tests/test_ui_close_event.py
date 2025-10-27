@@ -107,6 +107,8 @@ def _install_pyqt6_stubs():
     qtwidgets.QDialogButtonBox = QDialogButtonBox
     qtwidgets.QVBoxLayout = _BaseWidget
     qtwidgets.QHBoxLayout = _BaseWidget
+    qtwidgets.QGroupBox = _BaseWidget
+    qtwidgets.QFormLayout = _BaseWidget
     qtwidgets.QPushButton = QPushButton
     qtwidgets.QListWidget = QListWidget
     qtwidgets.QLineEdit = _BaseWidget
