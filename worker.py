@@ -54,6 +54,7 @@ class MonitoringWorker(threading.Thread):
                     use_regex = folder_config.get('use_regex', False)
                     rule_logic = folder_config.get('rule_logic', 'OR')
                     action_to_perform = folder_config.get('action', 'move') # Get action
+                    destination_folder = folder_config.get('destination_folder', '')
 
                     if not path_str:
                         self.log_queue.put("WARNING: Skipping entry with missing path.")
@@ -91,7 +92,8 @@ class MonitoringWorker(threading.Thread):
                                         age_days, # rule_age_days
                                         use_regex, # rule_use_regex
                                         self.history_manager.log_action, # history_logger_callable
-                                        current_run_id # run_id
+                                        current_run_id, # run_id
+                                        destination_folder
                                     )
                                     self.log_queue.put(f"{'INFO' if success else 'ERROR'}: {message}")
                                     if success:
