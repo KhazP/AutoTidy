@@ -52,6 +52,7 @@ class MonitoringWorker(threading.Thread):
                     age_days = folder_config.get('age_days', 0)
                     pattern = folder_config.get('pattern', '*.*')
                     use_regex = folder_config.get('use_regex', False)
+                    rule_logic = folder_config.get('rule_logic', 'OR')
                     action_to_perform = folder_config.get('action', 'move') # Get action
 
                     if not path_str:
@@ -79,7 +80,7 @@ class MonitoringWorker(threading.Thread):
                                 break
 
                              if item.is_file():
-                                if check_file(item, age_days, pattern, use_regex):
+                                if check_file(item, age_days, pattern, use_regex, rule_logic):
                                     success, message = process_file_action(
                                         item,
                                         monitored_path,
