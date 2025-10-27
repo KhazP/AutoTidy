@@ -64,6 +64,14 @@ class HistoryViewerDialog(QDialog):
         basic_filters_layout.addWidget(self.folderFilter, 0, 3)
         self.folderFilter.textChanged.connect(self.apply_filters)
 
+        # Keyword Filter
+        basic_filters_layout.addWidget(QLabel("Filter by Keyword:"), 1, 0)
+        self.keywordFilter = QLineEdit()
+        self.keywordFilter.setPlaceholderText("Search details, paths, or actions")
+        self.keywordFilter.setToolTip("Filter by keyword within action, details, or file paths.")
+        basic_filters_layout.addWidget(self.keywordFilter, 1, 1, 1, 3)
+        self.keywordFilter.textChanged.connect(self.apply_filters)
+
         filters_group_layout.addWidget(basic_filters_container)
 
         # Advanced Toggle
@@ -229,13 +237,14 @@ class HistoryViewerDialog(QDialog):
 
     def reset_filters(self):
         """Reset all filter widgets to their default state and reapply filters."""
-        widgets = [self.dateFilter, self.folderFilter, self.actionFilter, self.severityFilter]
+        widgets = [self.dateFilter, self.folderFilter, self.keywordFilter, self.actionFilter, self.severityFilter]
         for widget in widgets:
             widget.blockSignals(True)
 
         try:
             self.dateFilter.setDateTime(self._default_start_date)
             self.folderFilter.clear()
+            self.keywordFilter.clear()
             self.actionFilter.setCurrentIndex(0)
             self.severityFilter.setCurrentIndex(0)
         finally:
@@ -440,9 +449,10 @@ class HistoryViewerDialog(QDialog):
         # Get filter values
         selected_date_str = self.dateFilter.date().toString("yyyy-MM-dd")
         folder_query = self.folderFilter.text().lower()
+        keyword_query = self.keywordFilter.text().lower()
         action_query = self.actionFilter.currentData() if self.actionFilter.currentIndex() > 0 else self.actionFilter.currentText()
         if action_query == "All Actions": action_query = "" # Treat "All Actions" as no filter
-            
+
         severity_query = self.severityFilter.currentData() if self.severityFilter.currentIndex() > 0 else ""
         if severity_query == "All Severities": severity_query = ""
 
@@ -473,6 +483,23 @@ class HistoryViewerDialog(QDialog):
             severity = entry.get("severity", "INFO").upper() # Default to INFO if not present
             if severity_query and severity_query != severity:
                 continue
+
+            if keyword_query:
+                action_text = entry.get("action_taken", "").lower()
+                details_text = entry.get("details", "").lower()
+                original_path_text = entry.get("original_path", "").lower()
+                destination_path_text = entry.get("destination_path", "").lower()
+
+                if not any(
+                    keyword_query in field
+                    for field in (
+                        action_text,
+                        details_text,
+                        original_path_text,
+                        destination_path_text,
+                    )
+                ):
+                    continue
 
             filtered_data.append(entry)
 
