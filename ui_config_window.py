@@ -1432,15 +1432,33 @@ class ConfigWindow(QWidget):
             "<p><a href='learn_more_exclusions'>Learn more in the README</a></p>"
         )
 
-        msg_box = QMessageBox(self)
-        msg_box.setWindowTitle("Exclusion Pattern Help")
-        msg_box.setIcon(QMessageBox.Icon.Information)
-        msg_box.setTextFormat(Qt.TextFormat.RichText)
-        msg_box.setText(message_html)
-        msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
-        msg_box.setTextInteractionFlags(Qt.TextInteractionFlag.TextBrowserInteraction)
-        msg_box.linkActivated.connect(self._open_exclusion_help_link)
-        msg_box.exec()
+        # QMessageBox does not expose a linkActivated signal. Build a small dialog
+        # with a QLabel that supports rich text links and connect that signal.
+        from PyQt6.QtWidgets import QDialog, QVBoxLayout, QDialogButtonBox
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Exclusion Pattern Help")
+        layout = QVBoxLayout(dialog)
+
+        label = QLabel(message_html)
+        label.setTextFormat(Qt.TextFormat.RichText)
+        label.setTextInteractionFlags(Qt.TextInteractionFlag.TextBrowserInteraction)
+        label.setWordWrap(True)
+        # Connect label link clicks to the helper that opens README anchors
+        try:
+            label.linkActivated.connect(self._open_exclusion_help_link)
+        except Exception:
+            # If using stubbed Qt in tests, the QLabel may not have linkActivated
+            # In that case, ignore the connection to maintain testability.
+            pass
+
+        layout.addWidget(label)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)
+        buttons.accepted.connect(dialog.accept)
+        layout.addWidget(buttons)
+
+        dialog.exec()
 
     def _open_exclusion_help_link(self, link: str):
         if link != "learn_more_exclusions":
