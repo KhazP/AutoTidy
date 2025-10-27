@@ -155,13 +155,14 @@ class ConfigManager:
             if rule_def:
                 # Use provided rule definition from template
                 # Ensure all necessary keys are present, with defaults
+                normalized_action = self.normalize_action(rule_def.get('action', 'move'))
                 new_folder_config = {
                     'path': path,
                     'age_days': rule_def.get('days_older_than', 0),
                     'pattern': rule_def.get('file_pattern', '*.*'),
                     'rule_logic': rule_def.get('rule_logic', 'OR'),
                     'use_regex': rule_def.get('use_regex', False),
-                    'action': rule_def.get('action', 'move'),
+                    'action': normalized_action,
                     'destination_folder': rule_def.get('destination_folder', ''),
                     'exclusions': rule_def.get('exclusions', []),
                     'enabled': rule_def.get('enabled', True)
@@ -183,6 +184,25 @@ class ConfigManager:
             self.save_config()
             return True
         return False # Path already exists
+
+    @staticmethod
+    def normalize_action(action: str | None) -> str:
+        """Return the canonical action identifier for a rule definition."""
+        if not action:
+            return 'move'
+
+        normalized = str(action).strip().lower()
+        action_map = {
+            'move': 'move',
+            'copy': 'copy',
+            'delete': 'delete_to_trash',
+            'delete_to_trash': 'delete_to_trash',
+            'delete to trash': 'delete_to_trash',
+            'delete_permanently': 'delete_permanently',
+            'delete permanently': 'delete_permanently',
+        }
+
+        return action_map.get(normalized, 'move')
 
     def add_excluded_folder(self, path: str) -> bool:
         """Adds a folder path to the global exclusions list."""
@@ -212,7 +232,7 @@ class ConfigManager:
                 item['pattern'] = pattern
                 item['rule_logic'] = rule_logic
                 item['use_regex'] = use_regex
-                item['action'] = action
+                item['action'] = self.normalize_action(action)
                 item['exclusions'] = exclusions
                 if destination_folder is not None:
                     item['destination_folder'] = destination_folder

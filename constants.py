@@ -40,7 +40,7 @@ RULE_TEMPLATES = [
             {
                 "folder_to_watch": "%UserProfile%/Downloads",
                 "file_pattern": "*.*",
-                "action": "delete",
+                "action": "delete_to_trash",
                 "destination_folder": "", # Not needed for delete
                 "days_older_than": 90,
                 "enabled": True,
@@ -103,7 +103,7 @@ RULE_TEMPLATES = [
             {
                 "folder_to_watch": "C:/Windows/Temp", # Forward slashes are generally safer for paths in code
                 "file_pattern": "*.*",
-                "action": "delete",
+                "action": "delete_permanently",
                 "destination_folder": "",
                 "days_older_than": 0, # Delete immediately
                 "enabled": True,
@@ -112,7 +112,7 @@ RULE_TEMPLATES = [
             {
                 "folder_to_watch": "%LocalAppData%/Temp",
                 "file_pattern": "*.*",
-                "action": "delete",
+                "action": "delete_permanently",
                 "destination_folder": "",
                 "days_older_than": 0, # Delete immediately
                 "enabled": True,

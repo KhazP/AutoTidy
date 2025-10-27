@@ -778,32 +778,30 @@ class ConfigWindow(QWidget):
                             if item: # Ensure item is not None before calling text()
                                 existing_items_texts.append(item.text())
                         
+                        normalized_action = self.config_manager.normalize_action(rule_def.get('action', 'move'))
+                        normalized_rule_def = dict(rule_def)
+                        normalized_rule_def['action'] = normalized_action
+                        normalized_rule_def['destination_folder'] = expanded_dest_folder
+
                         if expanded_folder_path not in existing_items_texts:
-                            if self.config_manager.add_folder(expanded_folder_path, rule_def): # Add with template rule
+                            if self.config_manager.add_folder(expanded_folder_path, normalized_rule_def): # Add with template rule
                                 list_item = QListWidgetItem(expanded_folder_path)
                                 self.folder_list_widget.addItem(list_item)
                                 folders_added_or_updated.append(expanded_folder_path)
                                 self.log_queue.put(f"INFO: Added folder '{expanded_folder_path}' from template '{template_name}'.")
                             else:
                                 self.log_queue.put(f"INFO: Folder '{expanded_folder_path}' (from template) likely already in config, attempting to update rule.")
-                        
-                        action_map = {
-                            "move": "move",
-                            "copy": "copy",
-                            "delete": "delete_to_trash", 
-                            "delete_permanently": "delete_permanently"
-                        }
-                        
+
                         update_success = self.config_manager.update_folder_rule(
                             path=expanded_folder_path,
                             age_days=rule_def.get('days_older_than', 0),
                             pattern=rule_def.get('file_pattern', '*.*'),
-                            rule_logic=rule_def.get('rule_logic', 'OR'), 
-                            use_regex=rule_def.get('use_regex', False),   
-                            action=action_map.get(rule_def.get('action', 'move').lower(), "move"),
-                            exclusions=rule_def.get('exclusions', []),  
-                            destination_folder=expanded_dest_folder, 
-                            enabled=rule_def.get('enabled', True) 
+                            rule_logic=rule_def.get('rule_logic', 'OR'),
+                            use_regex=rule_def.get('use_regex', False),
+                            action=normalized_action,
+                            exclusions=rule_def.get('exclusions', []),
+                            destination_folder=expanded_dest_folder,
+                            enabled=rule_def.get('enabled', True)
                         )
                         if update_success:
                             if expanded_folder_path not in folders_added_or_updated: 
