@@ -4,7 +4,7 @@ import queue
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QListWidget, QLineEdit,
     QSpinBox, QLabel, QTextEdit, QFileDialog, QMessageBox, QListWidgetItem, QComboBox, QCheckBox,
-    QApplication, QMenu, QInputDialog
+    QApplication, QMenu, QInputDialog, QGroupBox, QFormLayout
 )
 from PyQt6.QtGui import QDesktopServices, QKeySequence, QAction # Import QAction
 from PyQt6.QtCore import QTimer, Qt, QUrl, pyqtSlot
@@ -118,63 +118,77 @@ class ConfigWindow(QWidget):
         main_layout.addWidget(self.folder_list_widget)
 
         # --- Rule Editor ---
-        rule_layout = QHBoxLayout()
-        rule_layout.addWidget(QLabel("Rules for selected folder:"))
-        rule_layout.addWidget(QLabel("Min Age (days):"))
+        main_layout.addWidget(QLabel("Rules for selected folder:"))
+
+        rule_groups_layout = QHBoxLayout()
+
+        match_group = QGroupBox("Match criteria")
+        match_form = QFormLayout()
+        match_form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+        match_group.setLayout(match_form)
+
         self.age_spinbox = QSpinBox()
         self.age_spinbox.setRange(0, 3650) # 0 to 10 years
         self.age_spinbox.setEnabled(False)
         self.age_spinbox.setToolTip("Minimum age in days for a file to be considered for action.")
-        rule_layout.addWidget(self.age_spinbox)
+        match_form.addRow("Min Age (days):", self.age_spinbox)
 
-        rule_layout.addWidget(QLabel("Filename Pattern:"))
         self.pattern_lineedit = QLineEdit()
         self.pattern_lineedit.setPlaceholderText("*.*")
         self.pattern_lineedit.setEnabled(False)
         self.pattern_lineedit.setToolTip("Filename pattern to match (e.g., *.tmp, document_*.docx). Wildcards supported.")
-        rule_layout.addWidget(self.pattern_lineedit)
+        match_form.addRow("Filename Pattern:", self.pattern_lineedit)
 
         # Add Use Regex Checkbox
         self.useRegexCheckbox = QCheckBox("Use Regular E&xpression") # Added &
         self.useRegexCheckbox.setEnabled(False)
         self.useRegexCheckbox.setToolTip("Check to use full regular expressions for pattern matching.")
-        rule_layout.addWidget(self.useRegexCheckbox)
+        match_form.addRow(self.useRegexCheckbox)
 
-        rule_layout.addWidget(QLabel("Logic:"))
         self.rule_logic_combo = QComboBox()
         self.rule_logic_combo.addItems(["OR", "AND"])
         self.rule_logic_combo.setEnabled(False)
         self.rule_logic_combo.setToolTip("Logic to combine age and pattern rules (OR: either matches, AND: both must match).")
-        rule_layout.addWidget(self.rule_logic_combo)
+        match_form.addRow("Logic:", self.rule_logic_combo)
 
-        # Action ComboBox (Move/Copy/Delete)
-        rule_layout.addWidget(QLabel("Action:"))
+        action_group = QGroupBox("Action")
+        action_form = QFormLayout()
+        action_form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+        action_group.setLayout(action_form)
+
         self.actionComboBox = QComboBox()
         self.actionComboBox.addItems(["Move", "Copy", "Delete to Trash", "Delete Permanently"])
         self.actionComboBox.setEnabled(False)
         self.actionComboBox.setToolTip("Action to perform on matching files.")
-        rule_layout.addWidget(self.actionComboBox)
+        action_form.addRow("Action:", self.actionComboBox)
 
-        rule_layout.addWidget(QLabel("Destination:"))
         self.destination_lineedit = QLineEdit()
         self.destination_lineedit.setPlaceholderText("Leave blank to use archive template")
         self.destination_lineedit.setEnabled(False)
         self.destination_lineedit.setToolTip(
             "Destination folder or template for move/copy actions. Supports environment variables and placeholders."
         )
-        rule_layout.addWidget(self.destination_lineedit)
+
+        destination_widget = QWidget()
+        destination_layout = QHBoxLayout(destination_widget)
+        destination_layout.setContentsMargins(0, 0, 0, 0)
+        destination_layout.setSpacing(6)
+        destination_layout.addWidget(self.destination_lineedit, 1)
 
         self.destination_browse_button = QPushButton("Browse…")
         self.destination_browse_button.setEnabled(False)
         self.destination_browse_button.setToolTip("Choose a destination folder for move/copy actions.")
-        rule_layout.addWidget(self.destination_browse_button)
+        destination_layout.addWidget(self.destination_browse_button)
+        action_form.addRow("Destination:", destination_widget)
 
         self.enabledCheckbox = QCheckBox("Rule Enabled")
         self.enabledCheckbox.setEnabled(False)
         self.enabledCheckbox.setToolTip("Temporarily disable this rule without removing it.")
-        rule_layout.addWidget(self.enabledCheckbox)
+        action_form.addRow(self.enabledCheckbox)
 
-        main_layout.addLayout(rule_layout)
+        rule_groups_layout.addWidget(match_group)
+        rule_groups_layout.addWidget(action_group)
+        main_layout.addLayout(rule_groups_layout)
 
         # --- Exclusion Rules Editor ---
         exclusion_layout = QHBoxLayout()
