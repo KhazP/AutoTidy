@@ -470,7 +470,7 @@ class HistoryViewerDialog(QDialog):
                 continue
 
             # Folder filter
-            monitored_folder = entry.get("monitored_folder", "").lower()
+            monitored_folder = str(entry.get("monitored_folder", "")).lower()
             if folder_query and folder_query not in monitored_folder:
                 continue
 
@@ -485,10 +485,10 @@ class HistoryViewerDialog(QDialog):
                 continue
 
             if keyword_query:
-                action_text = entry.get("action_taken", "").lower()
-                details_text = entry.get("details", "").lower()
-                original_path_text = entry.get("original_path", "").lower()
-                destination_path_text = entry.get("destination_path", "").lower()
+                action_text = str(entry.get("action_taken", "")).lower()
+                details_text = str(entry.get("details", "")).lower()
+                original_path_text = str(entry.get("original_path", "")).lower()
+                destination_path_text = str(entry.get("destination_path", "")).lower()
 
                 if not any(
                     keyword_query in field
