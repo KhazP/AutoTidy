@@ -4,9 +4,10 @@ import shutil
 from pathlib import Path
 import json
 
-# Add the parent directory to sys.path to allow imports of project modules
-# Assuming this script is run from a directory that has undo_manager.py etc. as siblings or in PYTHONPATH
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '.')))
+# Ensure the project root is available on sys.path when executing this test
+ROOT_DIR = Path(__file__).resolve().parent.parent
+if (root_str := str(ROOT_DIR)) not in sys.path:
+    sys.path.insert(0, root_str)
 
 try:
     from undo_manager import UndoManager

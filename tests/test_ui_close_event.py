@@ -118,6 +118,7 @@ def _install_pyqt6_stubs():
     qtwidgets.QListWidgetItem = _BaseWidget
     qtwidgets.QComboBox = _BaseWidget
     qtwidgets.QCheckBox = _BaseWidget
+    qtwidgets.QInputDialog = _BaseWidget
     qtwidgets.QApplication = QApplication
     qtwidgets.QMenu = QMenu
     sys.modules['PyQt6.QtWidgets'] = qtwidgets
