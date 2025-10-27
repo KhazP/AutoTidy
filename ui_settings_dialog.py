@@ -107,23 +107,33 @@ class SettingsDialog(QDialog):
         scheduling_label = QLabel("Scheduling:")
         layout.addWidget(scheduling_label)
 
-        schedule_type_layout = QHBoxLayout()
-        self.scheduleTypeComboBox = QComboBox()
-        self.scheduleTypeComboBox.addItems(["Run at interval"])
-        self.scheduleTypeComboBox.setEnabled(False) # Only one type for now
-        # scheduleTypeLayout.addWidget(QLabel("Type:")) # Optional label for type
-        schedule_type_layout.addWidget(self.scheduleTypeComboBox)
-        layout.addLayout(schedule_type_layout)
+        schedule_mode_description = QLabel(
+            "Interval scheduling is currently the only available mode."
+        )
+        schedule_mode_description.setWordWrap(True)
+        schedule_mode_description.setStyleSheet("color: grey;")
+        schedule_mode_description.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        layout.addWidget(schedule_mode_description)
 
         interval_minutes_layout = QHBoxLayout()
+        interval_minutes_layout.setContentsMargins(0, 0, 0, 0)
         self.intervalMinutesLabel = QLabel("Interval (minutes):")
         self.intervalMinutesSpinBox = QSpinBox()
         self.intervalMinutesSpinBox.setRange(1, 10080) # 1 min to 1 week (7 * 24 * 60)
         self.intervalMinutesSpinBox.setSuffix(" minutes")
         self.intervalMinutesSpinBox.setValue(self.initial_schedule_config.get('interval_minutes', 60))
         self.intervalMinutesSpinBox.setToolTip("How often AutoTidy should check folders for files to organize.")
+        
+        interval_info_label = QLabel("ℹ️")
+        interval_info_label.setToolTip(
+            "Dry Run Mode still follows the selected interval; AutoTidy logs actions instead of modifying files."
+        )
+        interval_info_label.setAccessibleName("Interval scheduling info")
+        interval_info_label.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+
         interval_minutes_layout.addWidget(self.intervalMinutesLabel)
         interval_minutes_layout.addWidget(self.intervalMinutesSpinBox)
+        interval_minutes_layout.addWidget(interval_info_label)
         layout.addLayout(interval_minutes_layout)
         # --- End New Scheduling Section ---
 
@@ -165,6 +175,11 @@ class SettingsDialog(QDialog):
         button_box.accepted.connect(self.accept) # Connect OK to accept()
         button_box.rejected.connect(self.reject) # Connect Cancel to reject()
         layout.addWidget(button_box)
+
+        # Ensure tab order flows naturally through scheduling controls
+        self.setTabOrder(self.dryRunModeCheckbox, self.notificationLevelComboBox)
+        self.setTabOrder(self.notificationLevelComboBox, self.intervalMinutesSpinBox)
+        self.setTabOrder(self.intervalMinutesSpinBox, self.archivePathTemplateInput)
 
         self.autostart_checkbox.setFocus() # Set initial focus
 
