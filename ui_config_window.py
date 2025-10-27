@@ -9,7 +9,7 @@ try:
     from PyQt6.QtWidgets import (
         QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QListWidget, QLineEdit,
         QSpinBox, QLabel, QTextEdit, QFileDialog, QMessageBox, QListWidgetItem, QComboBox, QCheckBox,
-        QApplication, QMenu, QInputDialog, QGroupBox, QFormLayout, QStackedLayout
+        QApplication, QMenu, QInputDialog, QGroupBox, QFormLayout, QStackedLayout, QStyle
     )
 except ImportError:  # pragma: no cover - fallback for test environments with stubs
     from PyQt6 import QtWidgets as _QtWidgets  # type: ignore
@@ -34,6 +34,7 @@ except ImportError:  # pragma: no cover - fallback for test environments with st
     QGroupBox = getattr(_QtWidgets, "QGroupBox", type("QGroupBox", (QWidget,), {}))
     QFormLayout = getattr(_QtWidgets, "QFormLayout", object)
     QStackedLayout = getattr(_QtWidgets, "QStackedLayout", object)
+    QStyle = getattr(_QtWidgets, "QStyle", object)
 
 try:
     from PyQt6.QtGui import (
@@ -125,7 +126,10 @@ from constants import (
 
 
 from undo_manager import UndoManager # Added for Undo functionality
-from ui_undo_dialog import UndoDialog # Added for Undo functionality
+try:
+    from ui_undo_dialog import UndoDialog # Added for Undo functionality
+except ImportError:  # pragma: no cover - allow running without full UI stack
+    UndoDialog = object  # type: ignore[assignment]
 from utils import get_preview_matches, resolve_destination_for_preview
 
 LOG_QUEUE_CHECK_INTERVAL_MS = 250
@@ -348,10 +352,36 @@ class ConfigWindow(QWidget):
         preview_button_row.addWidget(self.preview_rule_button)
         action_form.addRow(preview_button_row)
 
-        self.enabledCheckbox = QCheckBox("Rule Enabled")
-        self.enabledCheckbox.setEnabled(False)
-        self.enabledCheckbox.setToolTip("Temporarily disable this rule without removing it.")
-        action_form.addRow(self.enabledCheckbox)
+        self.enabledCheckbox = QCheckBox("Enable monitoring for this folder")
+        self.enabledCheckbox.setToolTip(
+            "Toggle off to pause cleanup for the selected folder without deleting its rule."
+        )
+        if hasattr(self.enabledCheckbox, "setCursor"):
+            try:
+                self.enabledCheckbox.setCursor(Qt.CursorShape.PointingHandCursor)
+            except AttributeError:
+                pass
+        if hasattr(self.enabledCheckbox, "setStyleSheet"):
+            self.enabledCheckbox.setStyleSheet("QCheckBox { font-weight: 600; }")
+
+        self.rule_enabled_hint_label = QLabel(
+            "AutoTidy skips this folder when disabled but keeps your rule settings saved."
+        )
+        if hasattr(self.rule_enabled_hint_label, "setWordWrap"):
+            self.rule_enabled_hint_label.setWordWrap(True)
+        if hasattr(self.rule_enabled_hint_label, "setStyleSheet"):
+            self.rule_enabled_hint_label.setStyleSheet(
+                "color: #6c757d; font-size: 9pt; margin-left: 24px;"
+            )
+
+        enabled_container = QWidget()
+        enabled_layout = QVBoxLayout(enabled_container)
+        enabled_layout.setContentsMargins(0, 0, 0, 0)
+        enabled_layout.setSpacing(4)
+        enabled_layout.addWidget(self.enabledCheckbox)
+        enabled_layout.addWidget(self.rule_enabled_hint_label)
+        self._set_rule_toggle_enabled(False)
+        action_form.addRow(enabled_container)
 
         rule_groups_layout.addWidget(match_group)
         rule_groups_layout.addWidget(action_group)
@@ -451,6 +481,35 @@ class ConfigWindow(QWidget):
         status_layout.addStretch()
         self.start_button = QPushButton("&Start Monitoring") # Text will be updated, added &
         self.start_button.setToolTip("Start the monitoring or dry run process (Ctrl+S)")
+        try:
+            play_icon = self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay)
+            if play_icon is not None:
+                self.start_button.setIcon(play_icon)
+        except Exception:
+            pass
+        if hasattr(self.start_button, "setStyleSheet"):
+            self.start_button.setStyleSheet(
+                "QPushButton {"
+                " background-color: #2f9e44;"
+                " color: #ffffff;"
+                " font-size: 14px;"
+                " font-weight: 600;"
+                " padding: 8px 20px;"
+                " border-radius: 6px;"
+                " }"
+                " QPushButton:hover { background-color: #37b24d; }"
+                " QPushButton:pressed { background-color: #2b8a3e; }"
+                " QPushButton:disabled { background-color: #adb5bd; color: #f1f3f5; }"
+            )
+        if hasattr(self.start_button, "setMinimumHeight"):
+            self.start_button.setMinimumHeight(36)
+        if hasattr(self.start_button, "setCursor"):
+            try:
+                self.start_button.setCursor(Qt.CursorShape.PointingHandCursor)
+            except AttributeError:
+                pass
+        if hasattr(self.start_button, "setDefault"):
+            self.start_button.setDefault(True)
         self.stop_button = QPushButton("S&top Monitoring") # Added &
         self.stop_button.setToolTip("Stop the currently running process (Ctrl+T)")
         self.stop_button.setEnabled(False)
@@ -1109,7 +1168,7 @@ class ConfigWindow(QWidget):
                          self.rule_logic_combo.setEnabled(False) # Disable logic combo
                          self.useRegexCheckbox.setEnabled(False) # Disable regex checkbox
                          self.actionComboBox.setEnabled(False) # Disable action combo box
-                         self.enabledCheckbox.setEnabled(False)
+                         self._set_rule_toggle_enabled(False)
                          self.age_spinbox.setValue(0)
                          self.pattern_lineedit.clear()
                          self.useRegexCheckbox.setChecked(False) # Uncheck regex checkbox
@@ -1184,7 +1243,7 @@ class ConfigWindow(QWidget):
                 self.actionComboBox.setEnabled(True) # Enable actionComboBox
                 self.destination_lineedit.setEnabled(True)
                 self.destination_browse_button.setEnabled(True)
-                self.enabledCheckbox.setEnabled(True)
+                self._set_rule_toggle_enabled(True)
                 preview_button = getattr(self, "preview_rule_button", None)
                 if preview_button is not None and hasattr(preview_button, "setEnabled"):
                     preview_button.setEnabled(True)
@@ -1212,7 +1271,7 @@ class ConfigWindow(QWidget):
                 self.actionComboBox.setEnabled(False) # Disable actionComboBox
                 self.destination_lineedit.setEnabled(False)
                 self.destination_browse_button.setEnabled(False)
-                self.enabledCheckbox.setEnabled(False)
+                self._set_rule_toggle_enabled(False)
                 preview_button = getattr(self, "preview_rule_button", None)
                 if preview_button is not None and hasattr(preview_button, "setEnabled"):
                     preview_button.setEnabled(False)
@@ -1238,7 +1297,7 @@ class ConfigWindow(QWidget):
             self.actionComboBox.setEnabled(False) # Disable actionComboBox
             self.destination_lineedit.setEnabled(False)
             self.destination_browse_button.setEnabled(False)
-            self.enabledCheckbox.setEnabled(False)
+            self._set_rule_toggle_enabled(False)
             preview_button = getattr(self, "preview_rule_button", None)
             if preview_button is not None and hasattr(preview_button, "setEnabled"):
                 preview_button.setEnabled(False)
@@ -1259,6 +1318,13 @@ class ConfigWindow(QWidget):
         if current is not None:
             self._refresh_folder_item_display(current)
         self._update_rule_summary()
+
+    def _set_rule_toggle_enabled(self, enabled: bool) -> None:
+        """Enable or disable the rule toggle and its helper text together."""
+        self.enabledCheckbox.setEnabled(enabled)
+        hint_label = getattr(self, "rule_enabled_hint_label", None)
+        if hint_label is not None and hasattr(hint_label, "setEnabled"):
+            hint_label.setEnabled(enabled)
 
     def _update_destination_enabled_state(self, base_enabled: bool | None = None):
         """Enable destination controls when editing is allowed and action supports it."""
@@ -1403,7 +1469,7 @@ class ConfigWindow(QWidget):
         self.rule_logic_combo.setEnabled(can_edit_rules)
         self.useRegexCheckbox.setEnabled(can_edit_rules)
         self.actionComboBox.setEnabled(can_edit_rules)
-        self.enabledCheckbox.setEnabled(can_edit_rules)
+        self._set_rule_toggle_enabled(can_edit_rules)
         self.exclusion_list_widget.setEnabled(can_edit_rules)
         self.add_exclusion_button.setEnabled(can_edit_rules)
         self.remove_exclusion_button.setEnabled(can_edit_rules)
