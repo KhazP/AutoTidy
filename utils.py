@@ -7,6 +7,7 @@ import re # Import re module
 import send2trash # Import send2trash
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import List
 
 def check_file(
     file_path: Path,
@@ -64,6 +65,110 @@ def check_file(
         return False
 
     return False # Does not match any criteria
+
+
+def get_preview_matches(
+    monitored_folder: Path,
+    age_days: int,
+    pattern: str,
+    use_regex: bool,
+    rule_logic: str = "OR",
+    max_results: int = 10,
+) -> List[Path]:
+    """Return up to ``max_results`` files that match the provided rule parameters.
+
+    Args:
+        monitored_folder: Folder containing files to evaluate.
+        age_days: Minimum age in days for files to match.
+        pattern: Pattern or regular expression to evaluate against filenames.
+        use_regex: Whether ``pattern`` should be treated as a regular expression.
+        rule_logic: Combination logic for age and pattern rules (``"AND"`` or ``"OR"``).
+        max_results: Maximum number of matching files to return.
+
+    Raises:
+        NotADirectoryError: If ``monitored_folder`` is not a valid directory.
+
+    Returns:
+        A list of Path objects representing matching files.
+    """
+
+    if not monitored_folder.is_dir():
+        raise NotADirectoryError(f"{monitored_folder} is not a directory")
+
+    matches: List[Path] = []
+    try:
+        for entry in sorted(monitored_folder.iterdir(), key=lambda p: p.name.lower()):
+            if entry.is_file() and check_file(entry, age_days, pattern, use_regex, rule_logic):
+                matches.append(entry)
+                if len(matches) >= max_results:
+                    break
+    except PermissionError as exc:
+        raise PermissionError(f"Permission denied accessing {monitored_folder}") from exc
+
+    return matches
+
+
+def resolve_destination_for_preview(
+    monitored_folder: Path,
+    destination_template: str,
+) -> Path:
+    """Resolve a destination template to the base directory used for preview checks.
+
+    Args:
+        monitored_folder: The folder being monitored.
+        destination_template: Destination string provided by the user.
+
+    Returns:
+        Path to the directory that should exist prior to performing the move/copy.
+
+    Raises:
+        NotADirectoryError: If ``monitored_folder`` is not a directory.
+        ValueError: If ``destination_template`` is empty.
+    """
+
+    if not destination_template:
+        raise ValueError("Destination template must not be empty.")
+
+    if not monitored_folder.is_dir():
+        raise NotADirectoryError(f"{monitored_folder} is not a directory")
+
+    now = datetime.now()
+    original_template = destination_template
+    resolved_template = destination_template
+
+    replacements = {
+        "{YYYY}": now.strftime("%Y"),
+        "{MM}": now.strftime("%m"),
+        "{DD}": now.strftime("%d"),
+        "{ORIGINAL_FOLDER_NAME}": monitored_folder.name,
+    }
+
+    includes_filename_tokens = any(
+        token in resolved_template for token in ("{FILENAME}", "{EXT}")
+    )
+
+    if includes_filename_tokens:
+        replacements.setdefault("{FILENAME}", "sample")
+        replacements.setdefault("{EXT}", ".txt")
+
+    for placeholder, value in replacements.items():
+        resolved_template = resolved_template.replace(placeholder, value)
+
+    resolved_template = os.path.expandvars(resolved_template)
+    resolved_template = os.path.expanduser(resolved_template)
+
+    path_candidate = Path(resolved_template)
+    if not path_candidate.is_absolute():
+        path_candidate = (monitored_folder / path_candidate).resolve()
+    else:
+        path_candidate = path_candidate.resolve()
+
+    if includes_filename_tokens or any(
+        token in original_template for token in ("{FILENAME}", "{EXT}")
+    ):
+        return path_candidate.parent
+
+    return path_candidate
 
 def process_file_action(
     file_path: Path,
