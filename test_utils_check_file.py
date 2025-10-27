@@ -47,6 +47,11 @@ class TestCheckFileLogic(unittest.TestCase):
         self.assertTrue(check_file(file_path, age_days=0, pattern="*.me", use_regex=False, rule_logic="AND"))
         self.assertFalse(check_file(file_path, age_days=0, pattern="*.nope", use_regex=False, rule_logic="AND"))
 
+    def test_and_logic_negative_age_relies_on_pattern_only(self):
+        file_path = self._create_file("match.neg")
+        self.assertTrue(check_file(file_path, age_days=-3, pattern="*.neg", use_regex=False, rule_logic="AND"))
+        self.assertFalse(check_file(file_path, age_days=-3, pattern="*.nope", use_regex=False, rule_logic="AND"))
+
 
 if __name__ == "__main__":
     unittest.main()

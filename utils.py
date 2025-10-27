@@ -29,12 +29,15 @@ def check_file(
     """
     try:
         # 1. Check Age
-        age_match = age_days <= 0
-        if age_days > 0:
+        if age_days <= 0:
+            age_match = True
+        else:
             mod_time = file_path.stat().st_mtime
             age_threshold = datetime.now() - timedelta(days=age_days)
             if datetime.fromtimestamp(mod_time) < age_threshold:
                 age_match = True # Matches age criteria
+            else:
+                age_match = False
 
         # 2. Check Pattern
         pattern_match = False
