@@ -24,6 +24,7 @@ class ConfigManager:
         self.config_file = self.config_dir / "config.json"
         self.default_config = {
             'folders': [],
+            'excluded_folders': [],
             'settings': {
                 'start_on_login': False,
                 'check_interval_seconds': 3600, # Old setting, might be replaced by new schedule settings
@@ -82,6 +83,7 @@ class ConfigManager:
                         folder_item.setdefault('exclusions', []) # Add default for exclusions
                         folder_item.setdefault('destination_folder', '') # Add default for destination_folder
                         folder_item.setdefault('enabled', True) # Add default for enabled
+                    config_data.setdefault('excluded_folders', [])
                     return config_data
                 # Handle migration from old list format
                 elif isinstance(config_data, list):
@@ -107,16 +109,24 @@ class ConfigManager:
                      return new_config
                 else:
                     print(f"Warning: Config file {self.config_file} has invalid format. Using default.", file=sys.stderr)
-                    return self.default_config.copy() # Return a copy
+                    default_config = self.default_config.copy()
+                    default_config.setdefault('excluded_folders', [])
+                    return default_config # Return a copy
         except FileNotFoundError:
             print(f"Info: Config file {self.config_file} not found. Using default.", file=sys.stderr)
-            return self.default_config.copy() # Return a copy
+            default_config = self.default_config.copy()
+            default_config.setdefault('excluded_folders', [])
+            return default_config # Return a copy
         except json.JSONDecodeError:
             print(f"Error: Could not decode JSON from {self.config_file}. Using default.", file=sys.stderr)
-            return self.default_config.copy() # Return a copy
+            default_config = self.default_config.copy()
+            default_config.setdefault('excluded_folders', [])
+            return default_config # Return a copy
         except Exception as e:
             print(f"Error loading config: {e}", file=sys.stderr)
-            return self.default_config.copy() # Return a copy
+            default_config = self.default_config.copy()
+            default_config.setdefault('excluded_folders', [])
+            return default_config # Return a copy
 
     def save_config(self):
         """Saves the current configuration to the JSON file."""
@@ -173,6 +183,15 @@ class ConfigManager:
             self.save_config()
             return True
         return False # Path already exists
+
+    def add_excluded_folder(self, path: str) -> bool:
+        """Adds a folder path to the global exclusions list."""
+        excluded_folders = self.config.setdefault('excluded_folders', [])
+        if path not in excluded_folders:
+            excluded_folders.append(path)
+            self.save_config()
+            return True
+        return False
 
     def remove_folder(self, path: str) -> bool:
         """Removes a folder configuration by path."""
