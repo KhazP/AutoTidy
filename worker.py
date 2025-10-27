@@ -30,9 +30,8 @@ class MonitoringWorker(threading.Thread):
         self.log_queue.put("INFO: Monitoring worker started.")
         self.log_queue.put("STATUS: Running")
 
-        current_run_id = str(uuid.uuid4()) # Generate run_id for this cycle
-
         while not self._stop_event.is_set():
+            current_run_id = str(uuid.uuid4()) # Generate run_id for this cycle
             # Get the list of folders specifically
             folders_to_monitor = self.config_manager.get_monitored_folders()
             total_files_processed_in_cycle = 0 # Initialize for the cycle
