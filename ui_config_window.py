@@ -592,11 +592,13 @@ class ConfigWindow(QWidget):
         # Ensure worker is stopped if running
         if self.monitoring_worker and self.monitoring_worker.is_alive():
             self.log_queue.put("INFO: Stopping monitoring due to window close...")
-            if hasattr(self.monitoring_worker, 'stop_monitoring') and callable(self.monitoring_worker.stop_monitoring):
-                 self.monitoring_worker.stop_monitoring()
+            if hasattr(self.monitoring_worker, 'stop') and callable(self.monitoring_worker.stop):
+                self.monitoring_worker.stop()
+                self.monitoring_worker.join(timeout=2) # Wait for worker to finish
+                if self.monitoring_worker.is_alive():
+                    self.log_queue.put("WARNING: Monitoring worker did not terminate before the window closed.")
             else:
-                 self.log_queue.put("ERROR: MonitoringWorker does not have a stop_monitoring method.")
-            self.monitoring_worker.join(timeout=2) # Wait for worker to finish
+                self.log_queue.put("ERROR: MonitoringWorker does not have a stop method.")
 
         # Save any pending changes (e.g., if user typed in a field and closed)
         # self.save_rule_changes() # This might be redundant if changes are saved on field edit
