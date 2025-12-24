@@ -20,7 +20,7 @@ def create_registry_key(key_path, command_name, command_description, command_act
     try:
         # Create the main key for the application context menu
         key = winreg.CreateKey(winreg.HKEY_CLASSES_ROOT, f"Directory\\shell\\{command_name}")
-        winreg.SetValue(key, "", winreg.REG_SZ, command_description) # Fix: Use "" for default value
+        winreg.SetValue(key, "", winreg.REG_SZ, command_description)
         winreg.CloseKey(key)
 
         # Create the command key
@@ -28,7 +28,7 @@ def create_registry_key(key_path, command_name, command_description, command_act
         # Set the command to execute. %V is replaced by the selected folder path.
         # Using %V as it's generally more robust for paths than %1, especially with spaces.
         command_to_run = f'''"{PYTHON_EXE}" "{SCRIPT_PATH}" {command_action_arg} "%V"'''
-        winreg.SetValue(command_key, "", winreg.REG_SZ, command_to_run) # Fix: Use "" for default value
+        winreg.SetValue(command_key, "", winreg.REG_SZ, command_to_run)
         winreg.CloseKey(command_key)
         print(f"Successfully created context menu item: {command_description}")
     except Exception as e:
