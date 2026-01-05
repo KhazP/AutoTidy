@@ -3,7 +3,7 @@
 # 🚀 AutoTidy — Automated File Organizer
 
 [![Version](https://img.shields.io/badge/version-1.5.0-blue.svg?style=for-the-badge)](constants.py)
-[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg?style=for-the-badge)](LICENSE)
+[![License: MPL-2.0](https://img.shields.io/badge/License-MPL_2.0-blue.svg?style=for-the-badge)](LICENSE)
 [![Contributions Welcome](https://img.shields.io/badge/contributions-welcome-orange.svg?style=for-the-badge)](#-contributing)
 
 > **Automatically tidy up cluttered folders.**  
@@ -234,4 +234,4 @@ Use at your own risk; the authors aren’t liable for data loss.
 
 ## 📄 License
 
-GPL-3.0 — see [LICENSE](LICENSE).
+MPL-2.0 — see [LICENSE](LICENSE).
