@@ -56,7 +56,7 @@ def resource_path(relative_path):
         base_path = os.path.abspath(".")
     return os.path.join(base_path, relative_path)
 
-ICON_NAME = "autotidyicon.ico"
+ICON_NAME = os.path.join("assets", "autotidyicon.ico")
 ICON_PATH = resource_path(ICON_NAME)  # Use resource_path for PyInstaller compatibility
 
 class AutoTidyApp(QApplication):

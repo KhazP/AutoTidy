@@ -1,4 +1,4 @@
-<img src="autotidyicon.ico" alt="AutoTidy Icon" width="96"/>
+<img src="assets/autotidyicon.ico" alt="AutoTidy Icon" width="96"/>
 
 # 🚀 AutoTidy — Automated File Organizer
 
@@ -122,7 +122,7 @@ python main.py
 **Build (example)**
 
 ```bash
-pyinstaller --noconfirm --clean --name AutoTidy --icon autotidyicon.ico --add-data "autotidyicon.ico;." main.py
+pyinstaller --noconfirm --clean --name AutoTidy --icon assets/autotidyicon.ico --add-data "assets/autotidyicon.ico;assets" main.py
 ```
 
 (Adjust for your layout; see your `dist/` output. The Windows installer is built with Inno Setup.)
@@ -188,7 +188,7 @@ pyinstaller --noconfirm --clean --name AutoTidy --icon autotidyicon.ico --add-da
 * `utils.py` — Helpers (file checks, path rendering, previews).
 * `constants.py` — App constants and placeholders.
 * `tests/` — Automated tests and PyQt stubs.
-* `autotidyicon.ico` — App icon.
+* `assets/autotidyicon.ico` — App icon.
 * `README.md` — This file.
 
 </details>

@@ -18,15 +18,21 @@ ENV/
 env/
 
 # Project Documentation/Notes (if not intended for repo)
-NOTES.md
-PRD-MVP.md
-Tech-Design-MVP.md
-Deep-Research-Summary.md
+docs/notes.md
+docs/PRD-MVP.md
+docs/Tech-Design-MVP.md
+docs/Deep-Research-Summary.md
+docs/SECURITY_IMPLEMENTATION.md
+docs/SECURITY_COMPLETION_SUMMARY.md
+docs/DEPENDENCIES.md
 
 # IDE specific
 .vscode/
 .idea/
+.specstory/
+.claude/
 autotidy_setup.iss
+backup-untracked-*/
 
 # OS specific
 .DS_Store
