@@ -1,0 +1,15 @@
+[project]
+name = "autotidy"
+version = "1.5.0"
+requires-python = ">=3.10"
+dependencies = [
+    "PyQt6>=6.5.0,<7.0.0",
+    "Send2Trash>=1.8.0,<2.0.0",
+]
+
+[project.scripts]
+autotidy = "main:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.backends.legacy:build"

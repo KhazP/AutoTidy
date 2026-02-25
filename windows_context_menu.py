@@ -49,8 +49,21 @@ def delete_registry_key(command_name):
         print(f"Error deleting registry key {command_name}: {e}")
         print("Please ensure you are running this script as an administrator.")
 
+def _is_admin() -> bool:
+    """Return True if the current process has administrator privileges."""
+    try:
+        import ctypes
+        return bool(ctypes.windll.shell32.IsUserAnAdmin())
+    except Exception:
+        return False
+
+
 def register_context_menu():
     """Registers the context menu items."""
+    if not _is_admin():
+        print("Error: Administrator privileges are required to register context menu items.")
+        print("Please run this script as Administrator.")
+        sys.exit(1)
     print("Registering context menu items...")
     create_registry_key(f"Directory\\shell\\{APP_NAME_ADD}", APP_NAME_ADD, APP_DESCRIPTION_ADD, "--add-folder")
     create_registry_key(f"Directory\\shell\\{APP_NAME_EXCLUDE}", APP_NAME_EXCLUDE, APP_DESCRIPTION_EXCLUDE, "--exclude-folder")
@@ -59,6 +72,10 @@ def register_context_menu():
 
 def unregister_context_menu():
     """Unregisters the context menu items."""
+    if not _is_admin():
+        print("Error: Administrator privileges are required to unregister context menu items.")
+        print("Please run this script as Administrator.")
+        sys.exit(1)
     print("Unregistering context menu items...")
     delete_registry_key(APP_NAME_ADD)
     delete_registry_key(APP_NAME_EXCLUDE)

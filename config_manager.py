@@ -1,12 +1,23 @@
 import json
 import os
 import sys
+import shutil
+import logging
 from pathlib import Path
 from constants import (
     DEFAULT_NOTIFICATION_LEVEL,
-    NOTIFICATION_LEVEL_ALL, # Assuming you might want to use this directly
-    # Add other notification levels if needed for validation or specific logic
+    NOTIFICATION_LEVEL_ALL,
+    NOTIFICATION_LEVEL_NONE,
+    NOTIFICATION_LEVEL_ERROR,
+    NOTIFICATION_LEVEL_SUMMARY,
 )
+
+_VALID_NOTIFICATION_LEVELS = {
+    NOTIFICATION_LEVEL_NONE, NOTIFICATION_LEVEL_ERROR,
+    NOTIFICATION_LEVEL_SUMMARY, NOTIFICATION_LEVEL_ALL,
+}
+
+logger = logging.getLogger(__name__)
 
 # DEFAULT_CONFIG = {'folders': [], 'settings': {'start_on_login': False}} # Default structure - Moved default to __init__
 
@@ -27,13 +38,13 @@ class ConfigManager:
             'excluded_folders': [],
             'settings': {
                 'start_on_login': False,
-                'check_interval_seconds': 3600, # Old setting, might be replaced by new schedule settings
                 'archive_path_template': '_Cleanup/{YYYY}-{MM}-{DD}',
                 'schedule_type': 'interval',  # Default schedule type
                 'interval_minutes': 60,  # Default interval in minutes
                 'dry_run_mode': False,  # Default dry run mode
                 'notification_level': DEFAULT_NOTIFICATION_LEVEL, # New setting
                 'hide_instructions': False,
+                'log_level': 'INFO',
             }
         }
         self.config = self._load_config()
@@ -67,6 +78,11 @@ class ConfigManager:
                     # Ensure default settings exist if missing
                     # Ensure 'settings' key itself exists in config_data first
                     loaded_settings = config_data.setdefault('settings', {})
+                    # Validate notification_level from stored config
+                    stored_level = loaded_settings.get('notification_level')
+                    if stored_level is not None and stored_level not in _VALID_NOTIFICATION_LEVELS:
+                        logger.warning("Stored notification level '%s' is invalid, resetting to default.", stored_level)
+                        loaded_settings['notification_level'] = DEFAULT_NOTIFICATION_LEVEL
                     default_settings = self.default_config['settings']
                     for key, default_value in default_settings.items():
                         if key not in loaded_settings: # Check against loaded_settings
@@ -88,7 +104,7 @@ class ConfigManager:
                     return config_data
                 # Handle migration from old list format
                 elif isinstance(config_data, list):
-                     print(f"Warning: Migrating old config format in {self.config_file}.", file=sys.stderr)
+                     logger.warning("Migrating old config format in %s.", self.config_file)
                      new_config = self.default_config.copy()
                      # Validate folder items (optional but good)
                      valid_folders = []
@@ -102,32 +118,37 @@ class ConfigManager:
                              item.setdefault('enabled', True) # Ensure enabled default during migration
                              valid_folders.append(item)
                          else:
-                             print(f"Warning: Skipping invalid folder item during migration: {item}", file=sys.stderr)
+                             logger.warning("Skipping invalid folder item during migration: %s", item)
                      new_config['folders'] = valid_folders
                      # Save the migrated config immediately
                      self.config = new_config # Temporarily set self.config for save
                      self.save_config()
                      return new_config
                 else:
-                    print(f"Warning: Config file {self.config_file} has invalid format. Using default.", file=sys.stderr)
+                    logger.warning("Config file %s has invalid format. Using default.", self.config_file)
                     default_config = self.default_config.copy()
                     default_config.setdefault('excluded_folders', [])
-                    return default_config # Return a copy
+                    return default_config
         except FileNotFoundError:
-            print(f"Info: Config file {self.config_file} not found. Using default.", file=sys.stderr)
+            logger.info("Config file %s not found. Using default.", self.config_file)
             default_config = self.default_config.copy()
             default_config.setdefault('excluded_folders', [])
-            return default_config # Return a copy
+            return default_config
         except json.JSONDecodeError:
-            print(f"Error: Could not decode JSON from {self.config_file}. Using default.", file=sys.stderr)
+            backup = Path(str(self.config_file) + ".corrupt.bak")
+            try:
+                shutil.copy2(str(self.config_file), str(backup))
+                logger.error("Config corrupted. Backed up to %s. Using defaults.", backup)
+            except OSError:
+                logger.error("Config corrupted and backup failed. Using defaults.")
             default_config = self.default_config.copy()
             default_config.setdefault('excluded_folders', [])
-            return default_config # Return a copy
+            return default_config
         except Exception as e:
-            print(f"Error loading config: {e}", file=sys.stderr)
+            logger.error("Error loading config: %s", e)
             default_config = self.default_config.copy()
             default_config.setdefault('excluded_folders', [])
-            return default_config # Return a copy
+            return default_config
 
     def save_config(self):
         """Saves the current configuration to the JSON file."""
@@ -136,7 +157,7 @@ class ConfigManager:
             with open(self.config_file, 'w') as f:
                 json.dump(self.config, f, indent=4)
         except Exception as e:
-            print(f"Error saving config: {e}", file=sys.stderr)
+            logger.error("Error saving config: %s", e)
 
     def get_config(self) -> dict: # Changed return type
         """Returns the current configuration dictionary."""
@@ -151,6 +172,7 @@ class ConfigManager:
         If rule_def is provided, it's used to populate the rule details.
         Otherwise, default rules are applied.
         """
+        path = str(Path(path).resolve())
         folders = self.config.setdefault('folders', [])
         if not any(item['path'] == path for item in folders):
             if rule_def:
@@ -205,8 +227,13 @@ class ConfigManager:
 
         return action_map.get(normalized, 'move')
 
+    def get_excluded_folders(self) -> list:
+        """Returns the list of globally excluded folder paths."""
+        return self.config.get('excluded_folders', [])
+
     def add_excluded_folder(self, path: str) -> bool:
         """Adds a folder path to the global exclusions list."""
+        path = str(Path(path).resolve())
         excluded_folders = self.config.setdefault('excluded_folders', [])
         if path not in excluded_folders:
             excluded_folders.append(path)
@@ -316,9 +343,17 @@ class ConfigManager:
 
     def set_notification_level(self, level: str):
         """Sets the notification level."""
-        # Basic validation could be added here to ensure 'level' is one of the defined constants
-        # from constants.py (e.g., NOTIFICATION_LEVEL_NONE, NOTIFICATION_LEVEL_ERROR, etc.)
-        # For now, we assume valid input.
+        if level not in _VALID_NOTIFICATION_LEVELS:
+            logger.warning("Invalid notification level '%s', using default.", level)
+            level = DEFAULT_NOTIFICATION_LEVEL
         settings = self.config.setdefault('settings', {})
         settings['notification_level'] = level
         self.save_config()
+
+    def get_log_level(self) -> str:
+        """Returns the configured log level string (e.g. 'DEBUG', 'INFO', 'WARNING')."""
+        level = self.config.get('settings', {}).get('log_level', 'INFO')
+        valid_levels = {'DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'}
+        if level.upper() not in valid_levels:
+            return 'INFO'
+        return level.upper()

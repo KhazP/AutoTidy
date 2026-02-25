@@ -3,11 +3,104 @@ import os
 import shutil
 import fnmatch
 import sys
-import re # Import re module
-import send2trash # Import send2trash
+import logging
+import re
+import functools
+import send2trash
 from datetime import datetime, timedelta
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
 from pathlib import Path
 from typing import List
+
+logger = logging.getLogger(__name__)
+
+_regex_executor = ThreadPoolExecutor(max_workers=1)
+
+
+@functools.lru_cache(maxsize=256)
+def _compile_pattern(pattern: str) -> "re.Pattern | None":
+    """Compile a regex pattern once, with timeout protection on first call.
+
+    Result is cached for the lifetime of the process, so per-file matching
+    incurs no thread overhead after the first compilation.
+    """
+    try:
+        future = _regex_executor.submit(re.compile, pattern)
+        return future.result(timeout=2.0)
+    except FuturesTimeout:
+        logger.warning("Regex pattern '%s' timed out during compilation", pattern)
+        return None
+    except re.error:
+        return None
+
+
+def safe_regex_match(pattern: str, string: str, timeout: float = 2.0) -> "re.Match | None":
+    """Match *string* against *pattern* safely.
+
+    Compilation is timeout-protected and cached; per-file matching runs the
+    compiled pattern directly, eliminating thread-submission overhead.
+    """
+    compiled = _compile_pattern(pattern)
+    if compiled is None:
+        return None
+    try:
+        return compiled.fullmatch(string)
+    except re.error:
+        return None
+
+
+def validate_archive_template(template: str) -> tuple[bool, str]:
+    """Validate an archive path template for safety.
+
+    Returns (True, "") on success, or (False, reason) on failure.
+    """
+    if not template:
+        return True, ""
+
+    # No path traversal
+    parts = Path(template.replace("\\", "/")).parts
+    if ".." in parts:
+        return False, "Template must not contain '..' path traversal components"
+
+    # Only allowed placeholders
+    import re as _re
+    placeholders = _re.findall(r'\{([^}]+)\}', template)
+    allowed = {"YYYY", "MM", "DD", "FILENAME", "EXT", "ORIGINAL_FOLDER_NAME"}
+    for ph in placeholders:
+        if ph not in allowed:
+            return False, f"Unknown placeholder {{{ph}}}. Allowed: {', '.join(sorted(allowed))}"
+
+    # No dangerous characters
+    dangerous = set(';|&`')
+    for ch in dangerous:
+        if ch in template:
+            return False, f"Template contains dangerous character: '{ch}'"
+
+    return True, ""
+
+
+def _atomic_claim_path(base_dir: Path, stem: str, ext: str, max_attempts: int = 100) -> Path:
+    """Atomically claim a unique file path using O_CREAT|O_EXCL.
+
+    Creates a placeholder file to reserve the name, returns the path.
+    Caller is responsible for replacing the placeholder with real content.
+    """
+    candidate = base_dir / f"{stem}{ext}"
+    for i in range(max_attempts + 1):
+        try:
+            fd = os.open(str(candidate), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            os.close(fd)
+            return candidate
+        except FileExistsError:
+            if i < max_attempts:
+                candidate = base_dir / f"{stem}_{i + 1}{ext}"
+    # Final timestamp fallback
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    candidate = base_dir / f"{stem}_{ts}{ext}"
+    fd = os.open(str(candidate), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    os.close(fd)
+    return candidate
+
 
 def check_file(
     file_path: Path,
@@ -15,6 +108,7 @@ def check_file(
     pattern: str,
     use_regex: bool,
     rule_logic: str = "OR",
+    precomputed_stat: "os.stat_result | None" = None,
 ) -> bool:
     """
     Checks if a file meets the criteria using the configured logic.
@@ -24,6 +118,7 @@ def check_file(
         age_days: Minimum age in days for the file to match.
         pattern: Filename pattern (fnmatch style or regex) to match.
         use_regex: Boolean indicating whether the pattern is a regular expression.
+        precomputed_stat: Optional cached stat result to avoid a redundant syscall.
 
     Returns:
         True if the file matches the configured logic, False otherwise.
@@ -32,7 +127,8 @@ def check_file(
         # 1. Check Age
         age_match = age_days <= 0
         if age_days > 0:
-            mod_time = file_path.stat().st_mtime
+            stat_result = precomputed_stat if precomputed_stat is not None else file_path.stat()
+            mod_time = stat_result.st_mtime
             age_threshold = datetime.now() - timedelta(days=age_days)
             if datetime.fromtimestamp(mod_time) < age_threshold:
                 age_match = True # Matches age criteria
@@ -42,10 +138,10 @@ def check_file(
         if pattern:
             if use_regex:
                 try:
-                    if re.fullmatch(pattern, file_path.name):
+                    if safe_regex_match(pattern, file_path.name):
                         pattern_match = True # Matches regex pattern criteria
                 except re.error as e:
-                    print(f"Error: Invalid regex pattern '{pattern}' for file {file_path.name}: {e}", file=sys.stderr)
+                    logger.error("Invalid regex pattern '%s' for file %s: %s", pattern, file_path.name, e)
                     # Treat as non-match if regex is invalid
             else:
                 if fnmatch.fnmatch(file_path.name, pattern):
@@ -57,14 +153,11 @@ def check_file(
         return age_match or pattern_match
 
     except FileNotFoundError:
-        # File might have been deleted between listing and checking
-        print(f"Warning: File not found during check: {file_path}", file=sys.stderr)
+        logger.warning("File not found during check: %s", file_path)
         return False
     except Exception as e:
-        print(f"Error checking file {file_path}: {e}", file=sys.stderr)
+        logger.error("Error checking file %s: %s", file_path, e)
         return False
-
-    return False # Does not match any criteria
 
 
 def get_preview_matches(
@@ -97,9 +190,18 @@ def get_preview_matches(
 
     matches: List[Path] = []
     try:
-        for entry in sorted(monitored_folder.iterdir(), key=lambda p: p.name.lower()):
-            if entry.is_file() and check_file(entry, age_days, pattern, use_regex, rule_logic):
-                matches.append(entry)
+        with os.scandir(str(monitored_folder)) as scanner:
+            entries = sorted(scanner, key=lambda e: e.name.lower())
+        for entry in entries:
+            if entry.is_symlink():
+                logger.debug("Skipping symlink in preview: %s", entry.path)
+                continue
+            if not entry.is_file(follow_symlinks=False):
+                continue
+            entry_stat = entry.stat(follow_symlinks=False)
+            if check_file(Path(entry.path), age_days, pattern, use_regex, rule_logic,
+                          precomputed_stat=entry_stat):
+                matches.append(Path(entry.path))
                 if len(matches) >= max_results:
                     break
     except PermissionError as exc:
@@ -234,6 +336,17 @@ def process_file_action(
 
             destination_value = (destination_folder or "").strip()
             template_in_use = destination_value if destination_value else archive_path_template
+            _tmpl_ok, _tmpl_err = validate_archive_template(template_in_use)
+            if not _tmpl_ok:
+                message = f"Error: Invalid archive template: {_tmpl_err}"
+                log_data = {
+                    "original_path": str(file_path), "action_taken": action.upper() + "_ERROR_TEMPLATE",
+                    "destination_path": None, "monitored_folder": str(monitored_folder_path),
+                    "rule_pattern": rule_pattern, "rule_age_days": rule_age_days, "rule_use_regex": rule_use_regex,
+                    "rule_action_config": action, "status": "FAILURE", "details": message, "run_id": run_id
+                }
+                history_logger_callable(log_data)
+                return False, message
             resolved_template = apply_template(template_in_use)
             expanded_template = os.path.expandvars(resolved_template)
             expanded_template = os.path.expanduser(expanded_template)
@@ -253,6 +366,23 @@ def process_file_action(
                 target_base_dir = target_path_candidate
                 target_file_path = target_base_dir / filename_full
 
+            # Boundary check: ensure resolved target stays within target_base_dir
+            try:
+                resolved_target = target_file_path.resolve()
+                resolved_base = target_base_dir.resolve()
+                if not (str(resolved_target).startswith(str(resolved_base) + os.sep) or resolved_target == resolved_base):
+                    message = f"Error: Target path escapes destination boundary for '{filename_full}'"
+                    log_data = {
+                        "original_path": str(file_path), "action_taken": action.upper() + "_ERROR_BOUNDARY",
+                        "destination_path": None, "monitored_folder": str(monitored_folder_path),
+                        "rule_pattern": rule_pattern, "rule_age_days": rule_age_days, "rule_use_regex": rule_use_regex,
+                        "rule_action_config": action, "status": "FAILURE", "details": message, "run_id": run_id
+                    }
+                    history_logger_callable(log_data)
+                    return False, message
+            except OSError:
+                pass  # resolve() can fail for non-existent paths; allow operation to proceed
+
             # Simulate filename collision handling for dry run as well
             counter = 1
             # For dry run, we only check if the initial path would exist if we *were* to create it.
@@ -270,23 +400,22 @@ def process_file_action(
             # If we want to show the collided name in dry run, this needs to be inside the loop or after.
             # Let's calculate the final intended path for both dry and non-dry runs.
 
-            temp_target_file_path = target_file_path
-            if not dry_run: # Only check actual existence if not a dry run
-                while temp_target_file_path.exists():
-                    temp_target_file_path = target_base_dir / f"{filename_stem}_{counter}{file_ext}"
-                    counter += 1
-                    if counter > 100: # Safety break
-                        message = f"Error: Too many filename collisions for {filename_full} in {target_base_dir}"
-                        log_data_collision = {
-                            "original_path": str(file_path), "action_taken": action.upper() + "_ERROR_COLLISION",
-                            "destination_path": str(target_base_dir / filename_full), "monitored_folder": str(monitored_folder_path),
-                            "rule_pattern": rule_pattern, "rule_age_days": rule_age_days, "rule_use_regex": rule_use_regex,
-                            "rule_action_config": action, "status": "FAILURE", "details": message, "run_id": run_id
-                        }
-                        history_logger_callable(log_data_collision)
-                        return False, message
-                target_file_path = temp_target_file_path # Update target_file_path with non-colliding name for actual ops
-            elif dry_run and target_file_path.exists(): # For dry run, if initial path exists, simulate one step of collision avoidance
+            if not dry_run:
+                # Atomically claim a unique path to avoid TOCTOU race
+                try:
+                    target_base_dir.mkdir(parents=True, exist_ok=True)
+                    target_file_path = _atomic_claim_path(target_base_dir, filename_stem, file_ext)
+                except OSError as _claim_err:
+                    message = f"Error: Could not claim unique path for '{filename_full}': {_claim_err}"
+                    log_data_collision = {
+                        "original_path": str(file_path), "action_taken": action.upper() + "_ERROR_COLLISION",
+                        "destination_path": str(target_base_dir / filename_full), "monitored_folder": str(monitored_folder_path),
+                        "rule_pattern": rule_pattern, "rule_age_days": rule_age_days, "rule_use_regex": rule_use_regex,
+                        "rule_action_config": action, "status": "FAILURE", "details": message, "run_id": run_id
+                    }
+                    history_logger_callable(log_data_collision)
+                    return False, message
+            elif dry_run and target_file_path.exists():
                 target_file_path = target_base_dir / f"{filename_stem}_1{file_ext}"
 
             try:
@@ -308,14 +437,27 @@ def process_file_action(
                 return True, message
 
             # Actual operations (not a dry run)
-            target_base_dir.mkdir(parents=True, exist_ok=True)
+            # target_base_dir.mkdir already called inside the atomic claim block above
 
             actual_log_action_verb_str = ""
             if action == "copy":
                 shutil.copy2(str(file_path), str(target_file_path))
                 actual_log_action_verb_str = "COPIED"
-            else: # move
-                shutil.move(str(file_path), str(target_file_path))
+            else:  # move — two-phase: rename (same-FS fast path) or copy+verify+unlink
+                src = Path(file_path)
+                dst = Path(target_file_path)
+                try:
+                    # Remove the empty placeholder created by _atomic_claim_path before renaming
+                    if dst.exists() and dst.stat().st_size == 0:
+                        dst.unlink()
+                    src.rename(dst)
+                except OSError:
+                    # Cross-filesystem fallback: copy2 → verify size → unlink source
+                    shutil.copy2(str(src), str(dst))
+                    if dst.stat().st_size != src.stat().st_size:
+                        dst.unlink()
+                        raise OSError("Copy verification failed: size mismatch")
+                    src.unlink()
                 actual_log_action_verb_str = "MOVED"
 
             message = f"{actual_log_action_verb_str.capitalize()}: {filename_full} -> {relative_target_path}"
@@ -325,6 +467,14 @@ def process_file_action(
                 "rule_pattern": rule_pattern, "rule_age_days": rule_age_days, "rule_use_regex": rule_use_regex,
                 "rule_action_config": action, "status": "SUCCESS", "details": message, "run_id": run_id
             }
+            # Record identity metadata for copy so undo can verify the file hasn't changed
+            if action == "copy":
+                try:
+                    stat = target_file_path.stat()
+                    log_data["copy_size"] = stat.st_size
+                    log_data["copy_mtime"] = stat.st_mtime
+                except OSError:
+                    pass
             history_logger_callable(log_data)
             return True, message
 

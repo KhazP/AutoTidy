@@ -183,7 +183,7 @@ class SettingsDialog(QDialog):
 
         self.nextRunStatusLabel = QLabel()
         self.nextRunStatusLabel.setObjectName("nextRunStatusLabel")
-        self.nextRunStatusLabel.setStyleSheet("color: grey; font-size: 9pt;")
+        self.nextRunStatusLabel.setStyleSheet("color: grey;")
         self.nextRunStatusLabel.setWordWrap(True)
         self.nextRunStatusLabel.setFocusPolicy(Qt.FocusPolicy.NoFocus)
 
@@ -217,7 +217,7 @@ class SettingsDialog(QDialog):
         archive_template_desc_label = QLabel(
             "Placeholders: {YYYY}, {MM}, {DD}, {FILENAME}, {EXT}, {ORIGINAL_FOLDER_NAME}"
         )
-        archive_template_desc_label.setStyleSheet("font-size: 9pt; color: grey;") # Optional styling
+        archive_template_desc_label.setStyleSheet("color: grey;")
         archive_template_desc_label.setWordWrap(True)
         archive_template_desc_label.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         archiving_layout.addWidget(archive_template_desc_label)

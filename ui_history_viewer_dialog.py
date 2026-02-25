@@ -15,6 +15,9 @@ import csv # For CSV export
 
 # ConfigManager is not directly imported if only its path method is used via a passed instance.
 
+PAGE_SIZE = 500  # Max rows loaded at once for performance
+
+
 class HistoryViewerDialog(QDialog):
     """Dialog to view action history from the JSONL file."""
 
@@ -22,7 +25,9 @@ class HistoryViewerDialog(QDialog):
         super().__init__(parent)
         self.config_manager = config_manager
         self.history_manager = history_manager
-        self.all_history_data = [] # Store all loaded history data
+        self.all_history_data = []   # Store all loaded history data
+        self._total_on_disk = 0      # Total entries in file (may exceed all_history_data)
+        self._loaded_all = False     # Whether all entries have been loaded
 
         self.setWindowTitle("AutoTidy Action History")
         self.setMinimumSize(900, 500) # Adjusted size for new elements
@@ -198,6 +203,12 @@ class HistoryViewerDialog(QDialog):
         buttons_layout.addWidget(self.exportButton)
 
         buttons_layout.addStretch(1)
+
+        self.loadAllButton = QPushButton("Load &All Entries")
+        self.loadAllButton.setToolTip("Load the complete history file (may be slow for large files).")
+        self.loadAllButton.clicked.connect(self._load_all_entries)
+        self.loadAllButton.setVisible(False)
+        buttons_layout.addWidget(self.loadAllButton)
 
         self.refreshButton = QPushButton("&Refresh All")
         self.refreshButton.setToolTip("Reload all action history, clearing filters (F5).")
@@ -476,50 +487,76 @@ class HistoryViewerDialog(QDialog):
         total = len(self.all_history_data) if total_count is None else total_count
         filtered = self.historyTable.rowCount() if filtered_count is None else filtered_count
         timestamp = refresh_time if refresh_time is not None else self.last_refresh_time
-        if timestamp is not None:
-            formatted_time = timestamp.strftime("%Y-%m-%d %H:%M:%S")
+        formatted_time = timestamp.strftime("%Y-%m-%d %H:%M:%S") if timestamp is not None else "N/A"
+        if not self._loaded_all and self._total_on_disk > PAGE_SIZE:
+            on_disk_note = f" (showing last {PAGE_SIZE} of {self._total_on_disk} total on disk)"
         else:
-            formatted_time = "N/A"
+            on_disk_note = ""
         self.summaryLabel.setText(
-            f"Showing {filtered} of {total} entries (Last refreshed: {formatted_time})."
+            f"Showing {filtered} of {total} loaded entries{on_disk_note} (Last refreshed: {formatted_time})."
         )
 
-    def load_history_data(self):
-        """Loads all history data from the file and stores it."""
+    def _parse_entry(self, line: str):
+        """Parse one JSONL line into a history dict, ensuring severity is set."""
+        log_entry = json.loads(line.strip())
+        if "severity" not in log_entry:
+            status = log_entry.get("status")
+            if status == constants.STATUS_FAILURE:
+                log_entry["severity"] = "ERROR"
+            elif status == constants.STATUS_SUCCESS:
+                log_entry["severity"] = "INFO"
+            elif status:
+                log_entry["severity"] = "WARNING"
+            else:
+                log_entry["severity"] = "INFO"
+        return log_entry
+
+    def _load_all_entries(self):
+        """Load the complete history file regardless of PAGE_SIZE."""
+        self._loaded_all = True
+        self.loadAllButton.setVisible(False)
+        self.load_history_data(load_all=True)
+
+    def load_history_data(self, load_all: bool = False):
+        """Loads history data from the file. Loads up to PAGE_SIZE recent entries by default."""
         self.all_history_data = []
-        history_file = self.history_manager.history_file_path # Use the path from history_manager
+        self._total_on_disk = 0
+        history_file = self.history_manager.history_file_path
         self.last_refresh_time = datetime.now()
         if not history_file.exists():
-            # QMessageBox.information(self, "History", "No history data found.")
-            # No need for a message if the file simply doesn't exist yet.
-            self.apply_filters() # Apply to an empty list to clear table
+            self._loaded_all = True
+            self.loadAllButton.setVisible(False)
+            self.apply_filters()
             return
 
         try:
+            lines = []
             with open(history_file, 'r', encoding='utf-8') as f:
                 for line in f:
-                    try:
-                        log_entry = json.loads(line.strip())
-                        # Ensure severity is present, default if not
-                        if "severity" not in log_entry:
-                            status = log_entry.get("status")
-                            if status == constants.STATUS_FAILURE:
-                                log_entry["severity"] = "ERROR"
-                            elif status == constants.STATUS_SUCCESS:
-                                log_entry["severity"] = "INFO"
-                            elif status:
-                                log_entry["severity"] = "WARNING"
-                            else:
-                                log_entry["severity"] = "INFO"
-                        self.all_history_data.append(log_entry)
-                    except json.JSONDecodeError:
-                        print(f"Skipping malformed line in history: {line.strip()}") # Log to console
-            self.all_history_data.sort(key=lambda x: x.get("timestamp", ""), reverse=True) # Sort by timestamp descending
+                    if line.strip():
+                        lines.append(line)
+            self._total_on_disk = len(lines)
+
+            load_all = load_all or self._loaded_all or self._total_on_disk <= PAGE_SIZE
+            if load_all:
+                slice_lines = lines
+                self._loaded_all = True
+            else:
+                slice_lines = lines[-PAGE_SIZE:]  # Most recent entries
+                self._loaded_all = False
+
+            for line in slice_lines:
+                try:
+                    self.all_history_data.append(self._parse_entry(line))
+                except json.JSONDecodeError:
+                    print(f"Skipping malformed line in history: {line.strip()}")
+
+            self.all_history_data.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
         except IOError as e:
             QMessageBox.critical(self, "Error Loading History", f"Could not read history file: {e}")
-            self.all_history_data = [] # Clear data on error
-        
-        # After loading all data, apply current filters
+            self.all_history_data = []
+
+        self.loadAllButton.setVisible(not self._loaded_all and self._total_on_disk > PAGE_SIZE)
         self.apply_filters()
 
 

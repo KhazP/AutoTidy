@@ -1,7 +1,20 @@
 # constants.py
+import sys
+from pathlib import Path
 
 APP_NAME = "AutoTidy"
-APP_VERSION = "1.0.1"
+APP_VERSION = "1.5.0"
+
+# Cross-platform home directory and common paths
+_HOME = str(Path.home())
+if sys.platform == "win32":
+    import os
+    _TEMP = os.path.expandvars("%LocalAppData%/Temp")
+    _WIN_TEMP = "C:/Windows/Temp"
+else:
+    import tempfile
+    _TEMP = tempfile.gettempdir()
+    _WIN_TEMP = _TEMP  # Fallback on non-Windows
 
 # Action types recorded in history
 ACTION_MOVED = "MOVED"
@@ -38,10 +51,10 @@ RULE_TEMPLATES = [
         "description": "Deletes files older than 90 days from your Downloads folder.",
         "rules": [
             {
-                "folder_to_watch": "%UserProfile%/Downloads",
+                "folder_to_watch": str(Path.home() / "Downloads"),
                 "file_pattern": "*.*",
                 "action": "delete_to_trash",
-                "destination_folder": "", # Not needed for delete
+                "destination_folder": "",
                 "days_older_than": 90,
                 "enabled": True,
                 "use_regex": False
@@ -50,13 +63,13 @@ RULE_TEMPLATES = [
     },
     {
         "name": "Organize Screenshots",
-        "description": "Moves screenshots named like \'Screenshot YYYY-MM-DD HHMMSS.png\' from your Pictures\\\\Screenshots folder to \'Pictures\\\\Organized Screenshots\'.",
+        "description": "Moves screenshots named like 'Screenshot YYYY-MM-DD HHMMSS.png' from your Pictures/Screenshots folder to 'Pictures/Organized Screenshots'.",
         "rules": [
             {
-                "folder_to_watch": "%UserProfile%/Pictures/Screenshots",
-                "file_pattern": "Screenshot ????-??-?? ??????.png", # Glob pattern for "Screenshot YYYY-MM-DD HHMMSS.png"
+                "folder_to_watch": str(Path.home() / "Pictures" / "Screenshots"),
+                "file_pattern": "Screenshot ????-??-?? ??????.png",
                 "action": "move",
-                "destination_folder": "%UserProfile%/Pictures/Organized Screenshots",
+                "destination_folder": str(Path.home() / "Pictures" / "Organized Screenshots"),
                 "days_older_than": 0,
                 "enabled": True,
                 "use_regex": False
@@ -65,31 +78,31 @@ RULE_TEMPLATES = [
     },
     {
         "name": "Organize Video Captures",
-        "description": "Moves video captures (MP4, AVI, MKV) older than 30 days from Videos\\\\Captures to \'Videos\\\\Archived Captures\'.",
+        "description": "Moves video captures (MP4, AVI, MKV) older than 30 days from Videos/Captures to 'Videos/Archived Captures'.",
         "rules": [
             {
-                "folder_to_watch": "%UserProfile%/Videos/Captures",
+                "folder_to_watch": str(Path.home() / "Videos" / "Captures"),
                 "file_pattern": "*.mp4",
                 "action": "move",
-                "destination_folder": "%UserProfile%/Videos/Archived Captures",
+                "destination_folder": str(Path.home() / "Videos" / "Archived Captures"),
                 "days_older_than": 30,
                 "enabled": True,
                 "use_regex": False
             },
             {
-                "folder_to_watch": "%UserProfile%/Videos/Captures",
+                "folder_to_watch": str(Path.home() / "Videos" / "Captures"),
                 "file_pattern": "*.avi",
                 "action": "move",
-                "destination_folder": "%UserProfile%/Videos/Archived Captures",
+                "destination_folder": str(Path.home() / "Videos" / "Archived Captures"),
                 "days_older_than": 30,
                 "enabled": True,
                 "use_regex": False
             },
             {
-                "folder_to_watch": "%UserProfile%/Videos/Captures",
+                "folder_to_watch": str(Path.home() / "Videos" / "Captures"),
                 "file_pattern": "*.mkv",
                 "action": "move",
-                "destination_folder": "%UserProfile%/Videos/Archived Captures",
+                "destination_folder": str(Path.home() / "Videos" / "Archived Captures"),
                 "days_older_than": 30,
                 "enabled": True,
                 "use_regex": False
@@ -98,23 +111,23 @@ RULE_TEMPLATES = [
     },
     {
         "name": "Clean Temporary Files",
-        "description": "Deletes all files from system temporary folders (C:\\\\Windows\\\\Temp and %LocalAppData%\\\\Temp). Use with caution.",
+        "description": "Deletes all files from system temporary folders. Use with caution.",
         "rules": [
             {
-                "folder_to_watch": "C:/Windows/Temp", # Forward slashes are generally safer for paths in code
+                "folder_to_watch": _WIN_TEMP,
                 "file_pattern": "*.*",
                 "action": "delete_permanently",
                 "destination_folder": "",
-                "days_older_than": 0, # Delete immediately
+                "days_older_than": 0,
                 "enabled": True,
                 "use_regex": False
             },
             {
-                "folder_to_watch": "%LocalAppData%/Temp",
+                "folder_to_watch": _TEMP,
                 "file_pattern": "*.*",
                 "action": "delete_permanently",
                 "destination_folder": "",
-                "days_older_than": 0, # Delete immediately
+                "days_older_than": 0,
                 "enabled": True,
                 "use_regex": False
             }
@@ -122,13 +135,13 @@ RULE_TEMPLATES = [
     },
     {
         "name": "Organize Game Captures (Example)",
-        "description": "Example: Moves MP4 game captures from a specific game\'s capture folder to an \'Organized\' subfolder. Customize the path for your game.",
+        "description": "Example: Moves MP4 game captures from a specific game's capture folder to an 'Organized' subfolder. Customize the path for your game.",
         "rules": [
             {
-                "folder_to_watch": "%UserProfile%/Videos/[Your Game Name]/Captures", # Placeholder
+                "folder_to_watch": str(Path.home() / "Videos" / "[Your Game Name]" / "Captures"),
                 "file_pattern": "*.mp4",
                 "action": "move",
-                "destination_folder": "%UserProfile%/Videos/[Your Game Name]/Captures/Organized", # Placeholder
+                "destination_folder": str(Path.home() / "Videos" / "[Your Game Name]" / "Captures" / "Organized"),
                 "days_older_than": 0,
                 "enabled": True,
                 "use_regex": False

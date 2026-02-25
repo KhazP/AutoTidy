@@ -1,2 +1,2 @@
-PyQt6
-send2trash
+PyQt6>=6.5.0,<7.0.0
+Send2Trash>=1.8.0,<2.0.0

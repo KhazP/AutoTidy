@@ -51,6 +51,9 @@ class MockConfigManager:
     def get_archive_path_template(self):
         return "{YYYY}/{MM}/{DD}"
 
+    def get_excluded_folders(self):
+        return []
+
     def get_schedule_config(self):
         return {'interval_minutes': 0}
 

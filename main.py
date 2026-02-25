@@ -2,15 +2,47 @@ import sys
 import queue
 import threading
 import os
-import argparse # Added for command line argument parsing
+import logging
+import logging.handlers
+import argparse
+from pathlib import Path
 from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu, QMessageBox
-from PyQt6.QtGui import QIcon, QAction # Assuming you have an icon file
+from PyQt6.QtGui import QIcon, QAction
 from PyQt6.QtCore import pyqtSlot
 
 # Import local modules
 from config_manager import ConfigManager
+from history_manager import HistoryManager
 from ui_config_window import ConfigWindow
-from constants import APP_NAME # Import from constants
+from constants import APP_NAME
+
+
+def setup_logging(log_dir: Path, level: str = "INFO"):
+    """Configure root logger with rotating file handler and console handler."""
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_file = log_dir / "autotidy.log"
+
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.DEBUG)
+
+    # Rotating file handler: 5 MB per file, keep 3 backups
+    file_handler = logging.handlers.RotatingFileHandler(
+        log_file, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8"
+    )
+    numeric_level = getattr(logging, level.upper(), logging.INFO)
+    file_handler.setLevel(numeric_level)
+    file_handler.setFormatter(logging.Formatter(
+        "%(asctime)s %(levelname)-8s %(name)s: %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    ))
+
+    # Console handler for warnings and above
+    console_handler = logging.StreamHandler(sys.stderr)
+    console_handler.setLevel(logging.WARNING)
+    console_handler.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
+
+    root_logger.addHandler(file_handler)
+    root_logger.addHandler(console_handler)
 # Worker is implicitly used by ConfigWindow's start/stop actions
 # No direct need for UndoManager/UndoDialog imports here if ConfigWindow handles it
 
@@ -162,10 +194,14 @@ class AutoTidyApp(QApplication):
         if self.config_window.monitoring_worker and self.config_window.monitoring_worker.is_alive():
             self.log_queue.put("INFO: Stopping worker thread...")
             self.config_window.stop_monitoring()
-            # Give the worker a moment to stop
+            # Give the worker up to 10s to finish any in-progress file operation
             self.config_window.monitoring_worker.join(timeout=2.0)
             if self.config_window.monitoring_worker.is_alive():
-                 self.log_queue.put("WARNING: Worker thread did not stop gracefully.")
+                self.tray_icon.showMessage(APP_NAME, "Shutting down, please wait...",
+                                           QSystemTrayIcon.MessageIcon.Information, 8000)
+                self.config_window.monitoring_worker.join(timeout=8.0)
+            if self.config_window.monitoring_worker.is_alive():
+                self.log_queue.put("WARNING: Worker thread did not stop gracefully.")
 
 
         # Save config just in case (though it should save on changes)
@@ -195,5 +231,15 @@ if __name__ == "__main__":
         sys.exit(0) # Exit after handling the context menu action
 
     # If no context menu arguments were processed, start the GUI application
+    # Set up logging before creating the app so all modules can log
+    _temp_cm_for_log = ConfigManager(APP_NAME)
+    setup_logging(_temp_cm_for_log.get_config_dir_path(), _temp_cm_for_log.get_log_level())
+    logging.getLogger(__name__).info("AutoTidy starting up.")
+    try:
+        _hm = HistoryManager(_temp_cm_for_log)
+        _hm.prune_old_entries()
+    except Exception as _prune_err:
+        logging.getLogger(__name__).warning("History pruning failed: %s", _prune_err)
+
     app = AutoTidyApp(sys.argv)
     sys.exit(app.exec())

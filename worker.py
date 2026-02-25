@@ -3,6 +3,7 @@ import time
 import queue
 import os
 import sys
+import logging
 from pathlib import Path
 import uuid
 import fnmatch
@@ -15,8 +16,10 @@ from constants import (
     NOTIFICATION_LEVEL_SUMMARY,
 )
 import constants
-from utils import check_file, process_file_action
-from history_manager import HistoryManager # Import HistoryManager
+from utils import check_file, process_file_action, safe_regex_match, _compile_pattern
+from history_manager import HistoryManager
+
+logger = logging.getLogger(__name__)
 
 # DEFAULT_CHECK_INTERVAL_SECONDS = 3600
 
@@ -78,6 +81,7 @@ class MonitoringWorker(threading.Thread):
                 self.log_queue.put(f"INFO: {scan_log_prefix}Starting scan of {len(folders_to_monitor)} configured folder(s)...")
 
                 archive_template = self.config_manager.get_archive_path_template()
+                excluded_folders = self.config_manager.get_excluded_folders()
                 for folder_config in folders_to_monitor:
                     if self._stop_event.is_set():
                         break
@@ -104,6 +108,12 @@ class MonitoringWorker(threading.Thread):
                         self._log_error(f"Monitored path is not a directory or does not exist: {path_str}")
                         continue
 
+                    # Check against global excluded folders before scanning
+                    normalized_path = str(monitored_path.resolve())
+                    if any(normalized_path == str(Path(ef).resolve()) for ef in excluded_folders if ef):
+                        self.log_queue.put(f"INFO: Skipping globally excluded folder: {path_str}")
+                        continue
+
                     scan_mode = "Regex" if use_regex else "Pattern"
                     action_desc_map = {
                         "move": "Moving",
@@ -114,66 +124,93 @@ class MonitoringWorker(threading.Thread):
                     action_desc = action_desc_map.get(action_to_perform, f"Unknown Action ({action_to_perform})")
                     self.log_queue.put(f"INFO: {scan_log_prefix}Scanning {monitored_path} (Age > {age_days} days, {scan_mode}: '{pattern}', Action: {action_desc})")
                     files_processed_this_folder = 0 # Initialize for this folder
+
+                    # Pre-compile patterns once per rule (not per file) for performance
+                    if use_regex and pattern:
+                        _compile_pattern(pattern)  # warm the cache; matching uses compiled form
+                    compiled_exclusions = []
+                    for excl in exclusions:
+                        if not excl:
+                            continue
+                        if use_regex:
+                            compiled_exclusions.append(('regex', excl))
+                            _compile_pattern(excl)  # warm cache for this exclusion too
+                        else:
+                            compiled_exclusions.append(('glob', excl))
+
                     try:
-                        for item in monitored_path.iterdir():
+                        with os.scandir(str(monitored_path)) as scanner:
+                            dir_entries = list(scanner)
+
+                        for entry in dir_entries:
                             if self._stop_event.is_set():
                                 break
 
-                            if item.is_file():
-                                if check_file(item, age_days, pattern, use_regex, rule_logic):
-                                    is_excluded = False
-                                    for exclusion in exclusions:
-                                        if not exclusion:
-                                            continue
-                                        try:
-                                            if use_regex:
-                                                if re.fullmatch(exclusion, item.name):
-                                                    is_excluded = True
-                                                    break
-                                            else:
-                                                if fnmatch.fnmatch(item.name, exclusion):
-                                                    is_excluded = True
-                                                    break
-                                        except re.error as e:
-                                            self._log_error(
-                                                f"Invalid exclusion pattern '{exclusion}' for {monitored_path}: {e}"
-                                            )
-                                            continue
+                            if entry.is_symlink():
+                                logger.debug("Skipping symlink: %s", entry.path)
+                                continue
 
-                                    if is_excluded:
-                                        details_message = f"Skipped excluded file: {item.name}"
-                                        self.log_queue.put(f"INFO: {details_message}")
-                                        self.history_manager.log_action({
-                                            "original_path": str(item),
-                                            "action_taken": constants.ACTION_SKIPPED,
-                                            "destination_path": None,
-                                            "monitored_folder": str(monitored_path),
-                                            "rule_pattern": pattern,
-                                            "rule_age_days": age_days,
-                                            "rule_use_regex": use_regex,
-                                            "rule_action_config": action_to_perform,
-                                            "status": constants.STATUS_SKIPPED,
-                                            "details": details_message,
-                                            "run_id": current_run_id,
-                                        })
-                                        continue
+                            if not entry.is_file(follow_symlinks=False):
+                                continue
 
-                                    success, message = process_file_action(
-                                        item,
-                                        monitored_path,
-                                        archive_template,
-                                        action_to_perform,
-                                        is_dry_run,
-                                        pattern, # rule_pattern
-                                        age_days, # rule_age_days
-                                        use_regex, # rule_use_regex
-                                        self.history_manager.log_action, # history_logger_callable
-                                        current_run_id, # run_id
-                                        destination_folder
-                                    )
-                                    self.log_queue.put(f"{'INFO' if success else 'ERROR'}: {message}")
-                                    if success:
-                                        files_processed_this_folder += 1
+                            item_name = entry.name
+                            item_path = Path(entry.path)
+
+                            # Check exclusions first (cheaper, matches documented behavior)
+                            is_excluded = False
+                            for excl_type, excl_val in compiled_exclusions:
+                                if excl_type == 'regex':
+                                    result = safe_regex_match(excl_val, item_name)
+                                    if result is not None and result:
+                                        is_excluded = True
+                                        break
+                                    elif result is None:
+                                        self._log_error(
+                                            f"Invalid or timed-out exclusion pattern '{excl_val}' for {monitored_path}"
+                                        )
+                                else:
+                                    if fnmatch.fnmatch(item_name, excl_val):
+                                        is_excluded = True
+                                        break
+
+                            if is_excluded:
+                                details_message = f"Skipped excluded file: {item_name}"
+                                self.log_queue.put(f"INFO: {details_message}")
+                                self.history_manager.log_action({
+                                    "original_path": str(item_path),
+                                    "action_taken": constants.ACTION_SKIPPED,
+                                    "destination_path": None,
+                                    "monitored_folder": str(monitored_path),
+                                    "rule_pattern": pattern,
+                                    "rule_age_days": age_days,
+                                    "rule_use_regex": use_regex,
+                                    "rule_action_config": action_to_perform,
+                                    "status": constants.STATUS_SKIPPED,
+                                    "details": details_message,
+                                    "run_id": current_run_id,
+                                })
+                                continue
+
+                            # Pass cached stat to check_file to avoid a second syscall
+                            entry_stat = entry.stat(follow_symlinks=False)
+                            if check_file(item_path, age_days, pattern, use_regex, rule_logic,
+                                          precomputed_stat=entry_stat):
+                                success, message = process_file_action(
+                                    item_path,
+                                    monitored_path,
+                                    archive_template,
+                                    action_to_perform,
+                                    is_dry_run,
+                                    pattern, # rule_pattern
+                                    age_days, # rule_age_days
+                                    use_regex, # rule_use_regex
+                                    self.history_manager.log_action, # history_logger_callable
+                                    current_run_id, # run_id
+                                    destination_folder
+                                )
+                                self.log_queue.put(f"{'INFO' if success else 'ERROR'}: {message}")
+                                if success:
+                                    files_processed_this_folder += 1
 
                     except PermissionError:
                          self._log_error(f"Permission denied accessing folder: {monitored_path}")
