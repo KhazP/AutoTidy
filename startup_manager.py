@@ -1,6 +1,7 @@
 import os
 import platform
 import sys
+import logging
 from typing import Any, Optional
 
 winreg: Optional[Any]
@@ -14,6 +15,7 @@ else:
     winreg = None  # type: ignore[assignment]
 
 APP_REGISTRY_PATH = r"Software\\Microsoft\\Windows\\CurrentVersion\\Run"
+logger = logging.getLogger(__name__)
 
 def is_autostart_supported() -> bool:
     """Return True if the current platform has an autostart implementation."""
@@ -65,9 +67,8 @@ def set_autostart(enable: bool, app_name: str):
 
     if system == "Windows":
         if winreg is None:
-            print(
-                "ERROR: Windows autostart configuration is unavailable because the winreg module could not be imported.",
-                file=sys.stderr,
+            logger.error(
+                "Windows autostart configuration is unavailable because the winreg module could not be imported."
             )
             return False
         try:
@@ -75,20 +76,20 @@ def set_autostart(enable: bool, app_name: str):
             if enable:
                 command = _get_windows_run_command(app_path)
                 winreg.SetValueEx(key, app_name, 0, winreg.REG_SZ, command)
-                print(f"INFO: Enabled autostart for {app_name} with command: {command}")
+                logger.info("Enabled autostart for %s with command: %s", app_name, command)
             else:
                 try:
                     winreg.DeleteValue(key, app_name)
-                    print(f"INFO: Disabled autostart for {app_name}")
+                    logger.info("Disabled autostart for %s", app_name)
                 except FileNotFoundError:
-                    print(f"INFO: Autostart entry for {app_name} not found, nothing to disable.") # Not an error
+                    logger.info("Autostart entry for %s not found, nothing to disable.", app_name)
             winreg.CloseKey(key)
             return True
         except OSError as e:
-            print(f"ERROR: Failed to access registry for autostart setting: {e}", file=sys.stderr)
+            logger.error("Failed to access registry for autostart setting: %s", e)
             return False
         except Exception as e:
-            print(f"ERROR: Unexpected error setting autostart: {e}", file=sys.stderr)
+            logger.exception("Unexpected error setting autostart: %s", e)
             return False
 
     elif system == "Linux":
@@ -118,29 +119,26 @@ Terminal=false
                 with open(desktop_file_path, "w") as f:
                     f.write(desktop_content)
                 os.chmod(desktop_file_path, 0o755) # Make executable if needed? Usually not for .desktop
-                print(f"INFO: Enabled autostart for {app_name} via {desktop_file_path}")
+                logger.info("Enabled autostart for %s via %s", app_name, desktop_file_path)
                 return True
             except Exception as e:
-                print(f"ERROR: Failed to create .desktop file {desktop_file_path}: {e}", file=sys.stderr)
+                logger.error("Failed to create .desktop file %s: %s", desktop_file_path, e)
                 return False
         else:
             if os.path.exists(desktop_file_path):
                 try:
                     os.remove(desktop_file_path)
-                    print(f"INFO: Disabled autostart for {app_name} by removing {desktop_file_path}")
+                    logger.info("Disabled autostart for %s by removing %s", app_name, desktop_file_path)
                     return True
                 except Exception as e:
-                    print(f"ERROR: Failed to remove .desktop file {desktop_file_path}: {e}", file=sys.stderr)
+                    logger.error("Failed to remove .desktop file %s: %s", desktop_file_path, e)
                     return False
             else:
-                print(f"INFO: Autostart .desktop file for {app_name} not found, nothing to disable.")
+                logger.info("Autostart .desktop file for %s not found, nothing to disable.", app_name)
                 return True # Not an error if already disabled
 
     else:
-        print(
-            f"WARNING: Autostart not implemented for operating system: {system}",
-            file=sys.stderr,
-        )
+        logger.warning("Autostart not implemented for operating system: %s", system)
         return False # Indicate not supported/implemented
 
 # Example usage (for testing):

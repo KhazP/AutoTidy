@@ -3,6 +3,7 @@ import sys
 import queue
 import re
 import html
+import logging
 from datetime import datetime, timedelta
 
 try:
@@ -142,6 +143,7 @@ ACTION_VALUE_TO_TEXT = {
 }
 
 ACTION_TEXT_TO_VALUE = {v: k for k, v in ACTION_VALUE_TO_TEXT.items()}
+logger = logging.getLogger(__name__)
 
 
 def _qt_item_role(name: str, fallback: int) -> int:
@@ -1727,9 +1729,16 @@ class ConfigWindow(QWidget):
                             # Explicitly call, relying on the hasattr check
                             getattr(app_instance, 'show_system_notification')(title, body)
                         else:
-                            print(f"DEBUG: AutoTidyApp instance not found or no show_system_notification method for: {message}", file=sys.stderr)
+                            logger.debug(
+                                "AutoTidyApp instance not found or no show_system_notification method for: %s",
+                                message,
+                            )
                     else:
-                        print(f"DEBUG: Notification suppressed by level ({category}): {message.get('title')}", file=sys.stderr)
+                        logger.debug(
+                            "Notification suppressed by level (%s): %s",
+                            category,
+                            message.get("title"),
+                        )
                 elif isinstance(message, str) and message.startswith("STATUS:"):
                     reported_status = message.split(":", 1)[1].strip()
                     if reported_status.lower().startswith("running") and self.config_manager.get_dry_run_mode():
@@ -1757,19 +1766,19 @@ class ConfigWindow(QWidget):
                         self._append_log_entry(severity, message)
                 else:
                     # Handle or log unexpected message types if necessary
-                    print(f"DEBUG: Received unexpected message type in log queue: {type(message)}", file=sys.stderr)
+                    logger.debug("Received unexpected message type in log queue: %s", type(message))
 
         except queue.Empty:
             # No messages left in the queue
             pass
         except Exception as e:
-             # Avoid crashing the UI thread if there's an issue processing logs
-             print(f"Error processing log queue: {e}", file=sys.stderr)
-             self.log_view.append(f'<font color="red">ERROR: UI failed to process log message: {e}</font>')
+            # Avoid crashing the UI thread if there's an issue processing logs
+            logger.exception("Error processing log queue: %s", e)
+            self.log_view.append(f'<font color="red">ERROR: UI failed to process log message: {e}</font>')
 
         # Also check if thread died unexpectedly without sending STATUS: Stopped
         if self.monitoring_worker and not self.monitoring_worker.is_alive() and self.worker_status == "Running":
-             self.log_queue.put("STATUS: Stopped (Unexpectedly)")
+            self.log_queue.put("STATUS: Stopped (Unexpectedly)")
 
 
     def closeEvent(self, event):

@@ -22,6 +22,9 @@
 - [🔧 Configuration](#-configuration)
 - [🗂️ Logs, History & Undo](#️-logs-history--undo)
 - [💻 Tech Stack](#-tech-stack)
+- [🔁 Reproducibility & Security](#-reproducibility--security)
+- [🙏 Dependencies & Acknowledgments](#-dependencies--acknowledgments)
+- [📚 Citation & Checklist Audit](#-citation--checklist-audit)
 - [📁 Key Files](#-key-files)
 - [⚠️ Known Limitations](#️-known-limitations)
 - [🗺️ Roadmap / Future Ideas](#️-roadmap--future-ideas)
@@ -107,11 +110,26 @@ You choose the folders and set simple rules. AutoTidy does the rest in the backg
 ## 🛠️ Run from Source
 
 **Prereqs**
-- Python **3.8+**
-- Install deps:
-  ```bash
-  pip install -r requirements.txt
+- Python **3.10+**
 
+**Recommended environment setup**
+
+```bash
+python -m venv .venv
+source .venv/bin/activate  # Windows PowerShell: .venv\Scripts\Activate.ps1
+```
+
+**Install deps**
+
+```bash
+pip install -r requirements.txt
+```
+
+**Run tests**
+
+```bash
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest
+```
 
 **Run**
 
@@ -167,10 +185,39 @@ pyinstaller --noconfirm --clean --name AutoTidy --icon assets/autotidyicon.ico -
 
 ## 💻 Tech Stack
 
-* **Python** (3.8+)
+* **Python** (3.10+)
 * **PyQt6** for the interface
 * **Threaded worker** for background scans
 * Uses standard libs: `os`, `pathlib`, `shutil`, `datetime`, `json`, `threading`, `queue`, `fnmatch`, and platform helpers.
+
+---
+
+## 🔁 Reproducibility & Security
+
+* AutoTidy behavior is deterministic for a given config and filesystem state; no stochastic model training/inference is used.
+* The project uses version-controlled source and automated tests in `tests/`.
+* CI runs pytest with coverage via `.github/workflows/tests.yml`.
+* No API keys or credentials are required for core functionality. Do not commit sensitive local paths or private data snapshots.
+
+---
+
+## 🙏 Dependencies & Acknowledgments
+
+* Runtime dependencies are declared in `requirements.txt` and `pyproject.toml`.
+* Primary libraries used:
+
+  * `PyQt6` for the desktop UI.
+  * `Send2Trash` for safe file deletion to recycle bin/trash.
+
+* Contributor workflow and collaboration details are documented in the Contributing section.
+
+---
+
+## 📚 Citation & Checklist Audit
+
+* Citation metadata is available in `CITATION.cff`.
+* Code-checklist audit results are tracked in `docs/CODE_CHECKLIST_AUDIT.md`.
+* Data/model checklist items are marked not applicable because AutoTidy is a desktop file-organization utility rather than a model-training repository.
 
 ---
 

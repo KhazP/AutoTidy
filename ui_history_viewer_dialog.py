@@ -1,5 +1,6 @@
 import json
 import shutil
+import logging
 from pathlib import Path
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QTableWidget, QTableWidgetItem, QPushButton,
@@ -16,6 +17,7 @@ import csv # For CSV export
 # ConfigManager is not directly imported if only its path method is used via a passed instance.
 
 PAGE_SIZE = 500  # Max rows loaded at once for performance
+logger = logging.getLogger(__name__)
 
 
 class HistoryViewerDialog(QDialog):
@@ -549,7 +551,7 @@ class HistoryViewerDialog(QDialog):
                 try:
                     self.all_history_data.append(self._parse_entry(line))
                 except json.JSONDecodeError:
-                    print(f"Skipping malformed line in history: {line.strip()}")
+                    logger.warning("Skipping malformed line in history: %s", line.strip())
 
             self.all_history_data.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
         except IOError as e:

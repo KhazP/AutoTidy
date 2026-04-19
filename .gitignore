@@ -9,6 +9,19 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
+.coverage
+.coverage.*
+htmlcov/
+
+# Packaging artifacts
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
 
 # Environment folders
 .env
@@ -16,6 +29,7 @@ __pycache__/
 venv/
 ENV/
 env/
+.python-version
 
 # Project Documentation/Notes (if not intended for repo)
 docs/notes.md

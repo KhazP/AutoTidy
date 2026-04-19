@@ -16,6 +16,8 @@ from history_manager import HistoryManager
 from ui_config_window import ConfigWindow
 from constants import APP_NAME
 
+logger = logging.getLogger(__name__)
+
 
 def setup_logging(log_dir: Path, level: str = "INFO"):
     """Configure root logger with rotating file handler and console handler."""
@@ -24,6 +26,7 @@ def setup_logging(log_dir: Path, level: str = "INFO"):
 
     root_logger = logging.getLogger()
     root_logger.setLevel(logging.DEBUG)
+    root_logger.handlers.clear()
 
     # Rotating file handler: 5 MB per file, keep 3 backups
     file_handler = logging.handlers.RotatingFileHandler(
@@ -50,7 +53,7 @@ def setup_logging(log_dir: Path, level: str = "INFO"):
 def handle_context_menu_action(action, folder_path, config_manager):
     """Handles actions triggered from the context menu."""
     if not os.path.isdir(folder_path):
-        print(f"Error: Provided path '{folder_path}' is not a valid directory.")
+        logger.error("Provided path '%s' is not a valid directory.", folder_path)
         # Optionally, show a QMessageBox to the user if GUI is available
         # msg_box = QMessageBox()
         # msg_box.setIcon(QMessageBox.Icon.Warning)
@@ -63,17 +66,17 @@ def handle_context_menu_action(action, folder_path, config_manager):
 
     if action == "add_folder":
         if config_manager.add_folder(folder_path):
-            print(f"Added '{folder_path}' to monitored folders via context menu.")
+            logger.info("Added '%s' to monitored folders via context menu.", folder_path)
             # TODO: Notify the user, perhaps via a tray notification if app is running
         else:
-            print(f"'{folder_path}' is already in monitored folders.")
+            logger.info("'%s' is already in monitored folders.", folder_path)
 
     elif action == "exclude_folder":
         if config_manager.add_excluded_folder(folder_path):
-            print(f"Added '{folder_path}' to excluded folders via context menu.")
+            logger.info("Added '%s' to excluded folders via context menu.", folder_path)
             # TODO: Notify the user
         else:
-            print(f"'{folder_path}' is already in excluded folders.")
+            logger.info("'%s' is already in excluded folders.", folder_path)
     # Potentially restart monitoring if it was active, or notify the user to do so.
     # This depends on how dynamic config updates are handled by the worker.
 # --- End of context menu additions ---
@@ -100,7 +103,7 @@ class AutoTidyApp(QApplication):
 
         # Check if system tray is available
         if not QSystemTrayIcon.isSystemTrayAvailable():
-            print("ERROR: System tray is not available on this system!", file=sys.stderr)
+            logger.error("System tray is not available on this system.")
             QMessageBox.critical(None, "AutoTidy Error", "System tray is not available on this system!")
             sys.exit(1)
 
@@ -166,7 +169,7 @@ class AutoTidyApp(QApplication):
             self.tray_icon.showMessage(title, message, icon_type, 5000) # Show for 5 seconds
         else:
             # Fallback if tray icon isn't visible for some reason (should not happen in normal operation)
-            print(f"Tray Notification: {title} - {message}", file=sys.stderr)
+            logger.warning("Tray notification fallback: %s - %s", title, message)
 
     @pyqtSlot(QSystemTrayIcon.ActivationReason)
     def on_tray_activated(self, reason):
