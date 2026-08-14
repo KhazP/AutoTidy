@@ -89,8 +89,10 @@ pub fn list_runs(log: &HistoryLog) -> Result<Vec<RunSummary>, UndoError> {
         }
     }
 
-    // Stable, so runs that somehow share a start time keep first-seen order.
-    runs.sort_by(|left, right| right.0.cmp(&left.0));
+    // Newest first. Stable, so runs that somehow share a start time keep
+    // first-seen order. `sort_by_key` with `Reverse` rather than a comparator
+    // closure — clippy 1.97 rejects the latter as `manual_sort_by`.
+    runs.sort_by_key(|(timestamp, ..)| std::cmp::Reverse(*timestamp));
     Ok(runs
         .into_iter()
         .map(|(start, run_id, action_count)| RunSummary {
@@ -125,7 +127,9 @@ pub fn run_actions(log: &HistoryLog, run_id: &str) -> Result<Vec<HistoryRecord>,
         })
         .collect();
 
-    matched.sort_by(|left, right| left.0.cmp(&right.0));
+    // Oldest first: a run has to be undone in reverse, and the caller reverses
+    // this. Stable, so records sharing a timestamp keep their file order.
+    matched.sort_by_key(|(timestamp, _)| *timestamp);
     Ok(matched.into_iter().map(|(_, record)| record).collect())
 }
 

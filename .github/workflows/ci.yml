@@ -32,6 +32,9 @@ jobs:
       - name: Format
         run: cargo fmt --all --check
 
+      # Engine crates only. The Tauri crate needs GTK/WebKit system libraries
+      # that this Linux runner does not have, and the app ships for Windows —
+      # so it is linted in the `app` job instead, not skipped.
       - name: Clippy
         run: cargo clippy -p autotidy-core -p autotidy-cli --all-targets
 
@@ -70,25 +73,18 @@ jobs:
       - name: Install the reference engine's dependencies
         run: pip install Send2Trash
 
-      # Guards the reference itself. If utils.py or constants.py break, the
-      # thing that verifies the rewrite is broken and every parity result below
-      # becomes meaningless.
+      # The legacy suite's own 76 tests are deliberately NOT run here. They
+      # cover retired 1.5.0 modules — the PyQt dialogs, config_manager,
+      # startup_manager — that nothing imports and that will never ship again.
+      # One of them also asserts on a path shape that breaks on runners whose
+      # username exceeds 8 characters (it compares `C:\Users\RUNNER~1\...`
+      # against the long form), so it fails for reasons that say nothing about
+      # this project.
       #
-      # Deliberately no --cov: coverage of retired code that will never ship
-      # again is noise, and the flag is what had this failing for months (the
-      # workflow set PYTEST_DISABLE_PLUGIN_AUTOLOAD=1, which unloads pytest-cov,
-      # then passed --cov to it). PYTEST_DISABLE_PLUGIN_AUTOLOAD is a local
-      # workaround for stray plugins in a developer environment and has no place
-      # on a clean runner.
-      # The whole suite runs headless with no PyQt6 present: the four tests that
-      # touch Qt inject stubs into sys.modules rather than importing it.
-      # Verified by running them with the real PyQt6 blocked — 76/76 pass.
-      - name: Reference engine self-tests
-        working-directory: legacy
-        run: |
-          pip install pytest
-          pytest -q
-
+      # The part of the reference engine that matters is utils.py and
+      # constants.py, which the two harnesses below import directly and
+      # exercise across 23 rule variants. If those break, parity breaks.
+      # Run the legacy suite locally with `cd legacy && pytest -q`.
       - name: Decisions (dry run, 12 rule variants)
         run: python tools/parity/run_parity.py
 
@@ -109,8 +105,20 @@ jobs:
           node-version: "22"
           cache: npm
 
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
       - run: npm ci
       - run: npm run build
+
+      # Clippy lints are emitted by clippy, not rustc, so `-D warnings` on the
+      # build step below does not cover them. Without this the shell crate is
+      # never linted at all — which is how a `byte_char_slices` lint sat
+      # unnoticed in src-tauri/src/lib.rs.
+      - name: Clippy
+        run: cargo clippy -p autotidy-app --all-targets
+
       - name: Test the shell
         run: cargo test -p autotidy-app
       - name: Build

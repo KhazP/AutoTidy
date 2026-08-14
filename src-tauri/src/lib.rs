@@ -917,7 +917,7 @@ mod tests {
         }
 
         // Newest backup first: .1 holds the most recent generation.
-        for (index, generation) in (1..=LOG_BACKUPS).zip([b'd', b'c', b'b']) {
+        for (index, &generation) in (1..=LOG_BACKUPS).zip(b"dcb") {
             let backup = backup_path(&log, index);
             assert!(backup.exists(), "{} should exist", backup.display());
             assert_eq!(std::fs::read(&backup).unwrap()[0], generation);
