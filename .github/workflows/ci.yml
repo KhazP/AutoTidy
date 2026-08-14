@@ -1,0 +1,123 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  engine:
+    name: Engine (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Both platforms on purpose. Glob matching is deliberately
+        # case-insensitive on Windows and case-sensitive elsewhere, mirroring
+        # Python's fnmatch — testing only the shipping target would let a
+        # regression in either direction through.
+        os: [windows-latest, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Format
+        run: cargo fmt --all --check
+
+      - name: Clippy
+        run: cargo clippy -p autotidy-core -p autotidy-cli --all-targets
+
+      - name: Test
+        run: cargo test -p autotidy-core -p autotidy-cli
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Build
+        run: npm run build
+
+  parity:
+    name: Parity vs the 1.5.0 engine
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # The retired 1.5.0 engine is the reference implementation under test, so
+      # its runtime dependency is needed. PyQt6 is not: the harness imports
+      # utils.py and constants.py directly and never constructs a UI.
+      - name: Install the reference engine's dependencies
+        run: pip install Send2Trash
+
+      # Guards the reference itself. If utils.py or constants.py break, the
+      # thing that verifies the rewrite is broken and every parity result below
+      # becomes meaningless.
+      #
+      # Deliberately no --cov: coverage of retired code that will never ship
+      # again is noise, and the flag is what had this failing for months (the
+      # workflow set PYTEST_DISABLE_PLUGIN_AUTOLOAD=1, which unloads pytest-cov,
+      # then passed --cov to it). PYTEST_DISABLE_PLUGIN_AUTOLOAD is a local
+      # workaround for stray plugins in a developer environment and has no place
+      # on a clean runner.
+      # The whole suite runs headless with no PyQt6 present: the four tests that
+      # touch Qt inject stubs into sys.modules rather than importing it.
+      # Verified by running them with the real PyQt6 blocked — 76/76 pass.
+      - name: Reference engine self-tests
+        working-directory: legacy
+        run: |
+          pip install pytest
+          pytest -q
+
+      - name: Decisions (dry run, 12 rule variants)
+        run: python tools/parity/run_parity.py
+
+      # Reaches the commit path — real renames and collision claiming — which
+      # lives inside `if not dry_run:` and a dry run structurally cannot touch.
+      - name: Resulting files (wet run, 11 rule variants)
+        run: python tools/parity/wet_parity.py
+
+  app:
+    name: Tauri app
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - run: npm ci
+      - run: npm run build
+      - name: Test the shell
+        run: cargo test -p autotidy-app
+      - name: Build
+        run: cargo build -p autotidy-app --release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: autotidy-windows
+          path: target/release/AutoTidy.exe
+          if-no-files-found: error

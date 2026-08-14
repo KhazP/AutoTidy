@@ -1,5 +1,10 @@
 # AutoTidy Code Checklist Audit
 
+> Updated for 2.0.0 (Rust + Tauri). Items describing the Python implementation
+> refer to the retired 1.5.0 engine, which is kept under
+> [`legacy/`](../legacy/README.md) as the reference the rewrite is verified
+> against — not as shipping code.
+
 Checklist source: https://imageomics.github.io/Imageomics-guide/wiki-guide/Code-Checklist/
 Audit date: 2026-04-20
 
@@ -78,15 +83,15 @@ Notebook item status: Not applicable for this desktop application workflow.
 
 ### Testing
 
-- [x] Unit tests present under `tests/`
-- [x] Integration-style tests present for rule processing and UI interactions
-- [x] Coverage command added to CI test workflow
-- [x] Automated test workflow added: `.github/workflows/tests.yml`
+- [x] Unit tests present under `crates/*/src` and `src-tauri/src` (251 tests)
+- [x] Reference-engine tests retained under `legacy/tests/` (76 tests)
+- [x] Differential parity harnesses under `tools/parity/`, run in CI
+- [x] Automated test workflow: `.github/workflows/ci.yml`
 
 ### Code Distribution and Deployment
 
-- [x] Packaging/build metadata present (`pyproject.toml`, `AutoTidy.spec`)
-- [x] Deployment/build workflow present (`.github/workflows/pyinstaller.yml`)
+- [x] Packaging/build metadata present (`Cargo.toml`, `src-tauri/tauri.conf.json`)
+- [x] Release workflow present (`.github/workflows/release.yml`)
 
 ## Follow-up Recommendations
 
