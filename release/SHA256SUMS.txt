@@ -1,0 +1,2 @@
+3b3f75a22902f2e28afeacc125b58f5c5d98d6f793352d2c0a50cf751fc561c4 *AutoTidy-2.0.0-portable.exe
+2c4599d34a8c6138b94796264527dabbabf0fa82f6cb105d4327f1f32cb4fff2 *AutoTidy_2.0.0_x64-setup.exe
