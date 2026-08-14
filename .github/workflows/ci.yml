@@ -121,11 +121,43 @@ jobs:
 
       - name: Test the shell
         run: cargo test -p autotidy-app
-      - name: Build
-        run: cargo build -p autotidy-app --release
+
+      # `npm run tauri build`, NOT `cargo build -p autotidy-app --release`.
+      #
+      # A plain cargo build compiles the Rust but never goes through the Tauri
+      # CLI, so the binary is not configured to serve its bundled frontend — it
+      # still points at devUrl. It launches, and every window renders
+      # "localhost refused to connect". The build succeeds, the executable is
+      # the right size, and nothing catches it short of running the thing.
+      #
+      # This job published exactly that binary as `autotidy-windows`.
+      - name: Build the app and installer
+        run: npm run tauri build
+
+      # Fail loudly rather than publish a binary that renders
+      # "localhost refused to connect" on every window.
+      #
+      # Note the check is for the frontend being PRESENT, not for the dev URL
+      # being absent: `devUrl` is compiled in from tauri.conf.json either way,
+      # so its presence proves nothing. The bundle hash from the freshly built
+      # dist-web appearing inside the executable is what actually distinguishes
+      # a build that embedded the UI from one that will go looking for a server.
+      - name: Verify the frontend is embedded
+        shell: pwsh
+        run: |
+          $asset = (Select-String -Path dist-web/index.html -Pattern '/assets/([A-Za-z0-9._-]+\.js)' -AllMatches
+                   ).Matches[0].Groups[1].Value
+          $exe = "target/release/AutoTidy.exe"
+          $text = [Text.Encoding]::UTF8.GetString([IO.File]::ReadAllBytes($exe))
+          if (-not $text.Contains($asset)) {
+            throw "$exe does not embed $asset - it will try to load from the dev server"
+          }
+          Write-Host "ok: $exe embeds $asset"
 
       - uses: actions/upload-artifact@v4
         with:
           name: autotidy-windows
-          path: target/release/AutoTidy.exe
+          path: |
+            target/release/AutoTidy.exe
+            target/release/bundle/nsis/*-setup.exe
           if-no-files-found: error
