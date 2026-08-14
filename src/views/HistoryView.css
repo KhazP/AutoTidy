@@ -1,0 +1,504 @@
+/*
+ * History: a virtualised table. The scroll container owns both axes, so a wide
+ * history never makes the window itself scroll sideways.
+ */
+
+.hist {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+
+  /* Local-only tokens. The skeleton needs a two-stop neutral ramp that reads in
+     both themes; both stops are derived from existing global tokens so nothing
+     new lands in global.css. */
+  --hist-sk-base: var(--bg-sunken);
+  --hist-sk-shine: var(--bg-subtle);
+}
+
+.hist__filters {
+  flex: none;
+  display: flex;
+  align-items: flex-end;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.hist__filters .field {
+  min-width: 0;
+}
+
+/* An applied filter has to be visible at a glance, not just readable inside the
+   control. Tinting the control itself is cheaper than a chip row and survives
+   the toolbar wrapping on a narrow window. */
+.hist__filters .input[data-filtered="true"],
+.hist__filters .select[data-filtered="true"] {
+  border-color: var(--accent);
+  background-color: var(--accent-soft);
+}
+
+.hist__search {
+  min-width: 220px;
+  flex: 1 1 260px;
+  max-width: 420px;
+}
+
+.hist__count {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.hist__scroll {
+  flex: 1 1 auto;
+  /* Keep a usable number of rows on screen even with the detail panel open. */
+  min-height: 168px;
+  overflow: auto;
+  background: var(--bg-surface);
+}
+
+.hist__table {
+  /* Wider than most windows on purpose; the container scrolls, the page never does. */
+  min-width: 1110px;
+  width: 100%;
+  display: block;
+  font-size: var(--fs-sm);
+  --hist-cols: 152px 148px 92px minmax(180px, 1.3fr) minmax(180px, 1.3fr) minmax(160px, 1fr)
+    74px;
+}
+
+/*
+ * Sticky header.
+ *
+ * `thead` is the layer that actually does the work: it is the only ancestor
+ * whose containing block is the scroll container's content box, so it is the
+ * only one that can travel. `headrow` and `th` are sticky too — they are pinned
+ * inside a box that never moves relative to them, so they are visually inert,
+ * but declaring it means no later `display`/`position` tweak can quietly
+ * un-stick a header cell.
+ *
+ * The z-index matters more than it looks. Virtualised rows are absolutely
+ * positioned, so they are painted as positioned boxes at z-index 0 and — being
+ * later in the DOM — would paint straight over a z-index:auto header. The stack
+ * here lifts the whole thead above them, and the background must stay fully
+ * opaque in both themes or rows show through as they pass underneath.
+ */
+.hist__head {
+  display: block;
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: var(--bg-subtle);
+}
+
+.hist__headrow {
+  display: grid;
+  position: sticky;
+  top: 0;
+  grid-template-columns: var(--hist-cols);
+  background: var(--bg-subtle);
+  border-bottom: 1px solid var(--border-strong);
+  box-shadow: 0 2px 4px -3px rgba(0, 0, 0, 0.45);
+}
+
+.hist__th {
+  display: flex;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  text-align: left;
+  font-weight: 600;
+  font-size: var(--fs-xs);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  background: var(--bg-subtle);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.hist__th--actions {
+  justify-content: flex-end;
+  padding-right: 12px;
+}
+
+.hist__sort {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  background: none;
+  padding: 2px 4px;
+  margin: -2px -4px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: inherit;
+}
+
+.hist__sort:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.hist__body {
+  display: block;
+  position: relative;
+  width: 100%;
+  /* Plays once, when the real rows replace the skeleton (or mount cold). */
+  animation: hist-fade-in 160ms ease-out;
+}
+
+.hist__row {
+  display: grid;
+  grid-template-columns: var(--hist-cols);
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  cursor: default;
+}
+
+.hist__row:hover {
+  background: var(--bg-hover);
+}
+
+.hist__row[aria-current="true"] {
+  background: var(--bg-selected);
+  color: var(--fg-selected);
+}
+
+.hist__row:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+.hist__td {
+  display: block;
+  padding: 0 10px;
+  /* Row height is fixed by the virtualiser, so centre with line-height rather
+     than flex — flex containers cannot ellipsis their own text. */
+  line-height: 27px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  border: 0;
+}
+
+.hist__td--path {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  direction: rtl;
+  text-align: left;
+}
+
+.hist__td--time {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
+.hist__row[aria-current="true"] .hist__td--time,
+.hist__row[aria-current="true"] .hist__td {
+  color: inherit;
+}
+
+/* ------------------------------------------------------------- row actions --
+ *
+ * A fixed-width trailing cell, so the buttons cost the row no height and the
+ * grid stays aligned whether or not they are visible. They rest at low
+ * emphasis rather than at zero: 340 rows of full-strength icons is noise, but
+ * a control you cannot see until you hover is a control most people never
+ * find. Hover, selection and keyboard focus all bring them to full strength.
+ */
+
+.hist__td--actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+  padding: 0 8px 0 4px;
+}
+
+.hist__rowbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0.42;
+  transition: opacity 90ms linear, background-color 90ms linear;
+}
+
+.hist__row:hover .hist__rowbtn,
+.hist__row:focus-within .hist__rowbtn,
+.hist__row[aria-current="true"] .hist__rowbtn {
+  opacity: 1;
+}
+
+.hist__row[aria-current="true"] .hist__rowbtn {
+  color: inherit;
+}
+
+.hist__rowbtn:hover {
+  background: var(--bg-active);
+  border-color: var(--border);
+  color: var(--text);
+  opacity: 1;
+}
+
+.hist__rowbtn:focus-visible {
+  opacity: 1;
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -1px;
+}
+
+@media (forced-colors: active) {
+  .hist__rowbtn {
+    opacity: 1;
+  }
+}
+
+/* ---------------------------------------------------------- loading states --
+ *
+ * The skeleton mirrors the real grid exactly — same track sizes, same 28px
+ * rows — so the swap to real content shifts nothing. It is gated behind a
+ * short delay in the view: a local file read usually finishes first, and a
+ * skeleton that appears for 20ms is worse than no skeleton at all.
+ */
+
+.hist__body--skeleton {
+  pointer-events: none;
+  animation: none;
+}
+
+.hist__row--skeleton {
+  cursor: default;
+}
+
+.hist__row--skeleton:hover {
+  background: transparent;
+}
+
+.hist__row--skeleton .hist__td {
+  display: flex;
+  align-items: center;
+}
+
+.hist__row--skeleton .hist__td:last-child {
+  justify-content: flex-end;
+  padding-right: 12px;
+}
+
+.hist__sk {
+  display: block;
+  height: 9px;
+  max-width: 100%;
+  border-radius: 3px;
+  background-color: var(--hist-sk-base);
+  background-image: linear-gradient(
+    90deg,
+    var(--hist-sk-base) 0%,
+    var(--hist-sk-shine) 45%,
+    var(--hist-sk-base) 90%
+  );
+  background-size: 320% 100%;
+  animation: hist-shimmer 1.4s ease-in-out infinite;
+}
+
+.hist__loading {
+  position: sticky;
+  left: 0;
+  width: max-content;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+.hist__spinner {
+  display: inline-block;
+  flex: none;
+  width: 13px;
+  height: 13px;
+  border: 2px solid var(--border-strong);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: hist-spin 0.7s linear infinite;
+}
+
+.hist__spinner--sm {
+  width: 11px;
+  height: 11px;
+}
+
+.hist__footstat {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+@keyframes hist-shimmer {
+  from {
+    background-position: 130% 0;
+  }
+  to {
+    background-position: -30% 0;
+  }
+}
+
+@keyframes hist-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes hist-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hist__body,
+  .hist__rowbtn {
+    animation: none;
+    transition: none;
+  }
+
+  .hist__sk {
+    animation: none;
+    background-image: none;
+  }
+
+  /* Slowed, not stopped: a frozen spinner reads as a hung app. */
+  .hist__spinner {
+    animation-duration: 2.4s;
+  }
+}
+
+/* ---------------------------------------------------------- empty & error --
+ *
+ * Three states that must never be mistaken for one another: nothing logged
+ * yet, nothing matching the filters, and a log that could not be read. The
+ * third keeps the danger palette and says so in words, because an empty table
+ * shown after a read failure reads as lost data.
+ */
+
+.hist > .empty {
+  flex: 1 1 auto;
+  min-height: 168px;
+  overflow: auto;
+  background: var(--bg-surface);
+}
+
+.hist .empty__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+}
+
+.hist__state {
+  flex: 1 1 auto;
+  min-height: 168px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+  padding: var(--sp-5) var(--sp-4);
+  background: var(--bg-surface);
+}
+
+.hist__state-inner {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  width: 100%;
+  max-width: 560px;
+}
+
+.hist__state-note {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  text-align: left;
+}
+
+.hist__state-note code {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  padding: 0 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+}
+
+/* --------------------------------------------------------------- detail --- */
+
+.hist__detail {
+  flex: none;
+  border-top: 1px solid var(--border);
+  background: var(--bg-subtle);
+  padding: var(--sp-2) var(--sp-3);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 172px;
+  overflow: auto;
+}
+
+.hist__detailgrid {
+  display: grid;
+  grid-template-columns: 130px minmax(0, 1fr);
+  gap: 2px var(--sp-3);
+  font-size: var(--fs-sm);
+}
+
+.hist__detailgrid dt {
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.hist__detailgrid dd {
+  margin: 0;
+  min-width: 0;
+  word-break: break-all;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+
+.hist__footer {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 6px var(--sp-3);
+  border-top: 1px solid var(--border);
+  background: var(--bg-surface);
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}

@@ -7,7 +7,9 @@ Audit date: 2026-04-20
 
 - [x] License file present: `LICENSE` (MPL-2.0)
 - [x] README present with overview, installation, and usage: `README.md`
-- [x] Dependency specification present: `pyproject.toml` and `requirements.txt`
+- [x] Dependency specification present: `Cargo.toml` and `package.json` (the
+      shipping Rust + Tauri app); `legacy/pyproject.toml` and
+      `legacy/requirements.txt` for the retired 1.5.0 reference engine
 - [x] Git ignore rules present: `.gitignore`
 - [x] Citation metadata present: `CITATION.cff`
 

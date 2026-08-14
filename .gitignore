@@ -4,6 +4,21 @@ build/
 dist/
 Output/
 
+# Rust
+/target/
+**/*.rs.bk
+
+# Node / Tauri frontend
+node_modules/
+dist-web/
+src-tauri/target/
+src-tauri/gen/
+.vite/
+
+# Parity-testing artifacts (generated corpora and engine output)
+tools/parity/corpus/
+tools/parity/out/
+
 # Python cache
 __pycache__/
 *.pyc

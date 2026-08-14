@@ -1,0 +1,578 @@
+.settings {
+  max-width: 780px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+
+.settings__version {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.fieldset__lead {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  margin-bottom: var(--sp-2);
+}
+
+/* ------------------------------------------------------------------ save bar */
+
+/*
+ * Settings is a draft form: every field below edits a local copy and only the
+ * button in this bar writes config.json. The bar is therefore always present —
+ * a save action that only appears once you are dirty gives you nothing to look
+ * for, and no place to read back "yes, that landed".
+ */
+.settings__savebar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-4);
+  border-top: 1px solid var(--border);
+  background: var(--bg-surface);
+  font-size: var(--fs-sm);
+}
+
+.settings__savebar[data-state="dirty"],
+.settings__savebar[data-state="saving"] {
+  background: var(--info-bg);
+  border-top-color: var(--info-border);
+}
+
+.settings__savebar[data-state="saved"] {
+  background: var(--ok-bg);
+  border-top-color: var(--ok-border);
+}
+
+.settings__savebar[data-state="error"] {
+  background: var(--danger-bg);
+  border-top-color: var(--danger-border);
+}
+
+.settings__saveicon {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+}
+
+.settings__saveicon:empty {
+  display: none;
+}
+
+.settings__savebar[data-state="saved"] .settings__saveicon,
+.settings__savebar[data-state="saved"] .settings__savetext {
+  color: var(--ok);
+}
+
+.settings__savebar[data-state="error"] .settings__saveicon,
+.settings__savebar[data-state="error"] .settings__savetext {
+  color: var(--danger);
+}
+
+.settings__savebar[data-state="dirty"] .settings__savetext {
+  font-weight: 600;
+}
+
+.settings__savetext {
+  min-width: 0;
+  color: var(--text-muted);
+}
+
+.settings__savebar[data-state="dirty"] .settings__savetext {
+  color: var(--text);
+}
+
+/* -------------------------------------------------------------------- spinner */
+
+.spinner {
+  display: inline-block;
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  opacity: 0.8;
+  animation: settings-spin 700ms linear infinite;
+}
+
+@keyframes settings-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* --------------------------------------------------------------------- switch */
+
+.switchlist {
+  display: flex;
+  flex-direction: column;
+}
+
+.switchrow {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  padding: var(--sp-2) 0;
+  min-width: 0;
+}
+
+.switchlist .switchrow + .switchrow {
+  border-top: 1px solid var(--border);
+}
+
+.switchrow__text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.switchrow__label {
+  font-size: var(--fs-base);
+  font-weight: 600;
+  cursor: pointer;
+  width: fit-content;
+}
+
+.switchrow--disabled .switchrow__label {
+  cursor: default;
+}
+
+.switchrow__hint {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+.switchrow__control {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding-top: 1px;
+}
+
+/*
+ * The word carries the state. Colour and thumb position agree with it, but
+ * neither is load-bearing on its own.
+ */
+.switchrow__state {
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  min-width: 22px;
+  text-align: right;
+}
+
+.switchrow--on .switchrow__state {
+  color: var(--accent);
+}
+
+.switchrow--disabled {
+  opacity: 0.6;
+}
+
+.switch {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  width: 36px;
+  height: 20px;
+}
+
+.switch__input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+  z-index: 1;
+}
+
+.switch__input:disabled {
+  cursor: default;
+}
+
+.switch__track {
+  position: absolute;
+  inset: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--bg-sunken);
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease;
+}
+
+.switch__thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  transition:
+    transform 120ms ease,
+    background-color 120ms ease;
+}
+
+.switch__input:hover:not(:disabled) + .switch__track {
+  border-color: var(--text-faint);
+}
+
+/*
+ * On/off comes from the wrapper class, not `:checked`. React drives a
+ * controlled checkbox by assigning the `checked` *property*, and the `checked`
+ * attribute never moves — which leaves `:checked` styling stale in both
+ * directions. The word, the wrapper class and the graphic all read from the
+ * same React state instead, so they cannot disagree.
+ */
+.switchrow--on .switch__track {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.switchrow--on .switch__thumb {
+  transform: translateX(16px);
+  background: var(--accent-fg);
+}
+
+.switch__input:focus-visible + .switch__track {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+@media (forced-colors: active) {
+  .switch__track {
+    background: Canvas;
+    border-color: CanvasText;
+  }
+  .switch__thumb {
+    background: CanvasText;
+  }
+  .switchrow--on .switch__track {
+    background: Highlight;
+    border-color: Highlight;
+  }
+  .switchrow--on .switch__thumb {
+    background: Canvas;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .switch__track,
+  .switch__thumb {
+    transition: none;
+  }
+  .spinner {
+    animation: none;
+  }
+}
+
+/* Auto-save outcome for the two Windows switches. */
+.applystate {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--fs-sm);
+  margin-top: 2px;
+  color: var(--text-muted);
+}
+
+.applystate--applied {
+  color: var(--ok);
+}
+
+.applystate--failed {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+/* ------------------------------------------------- leftovers from AutoTidy 1.x */
+
+/*
+ * Sits inside a `notice--warn`, which paints everything amber. The body text
+ * reclaims the normal colour: this is a long explanation of a registry change,
+ * and amber prose at that length is harder to read than it is urgent. The
+ * heading and the icon keep the warning colour and carry the tone.
+ */
+.stalemenu {
+  margin-top: var(--sp-3);
+}
+
+.stalemenu__text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  color: var(--text);
+  min-width: 0;
+}
+
+/*
+ * One block per entry: caption, key path, command. The command is the reason
+ * the block exists, so it wraps rather than truncating — a registry path
+ * elided in the middle is a path the user cannot check.
+ */
+.stalemenu__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.stalemenu__item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--sp-2);
+  border: 1px solid var(--warn-border);
+  border-radius: var(--radius);
+  background: var(--bg-surface);
+  min-width: 0;
+}
+
+.stalemenu__item dt {
+  font-weight: 600;
+  font-size: var(--fs-sm);
+}
+
+.stalemenu__item dd {
+  margin: 0;
+  min-width: 0;
+}
+
+.stalemenu__item code {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  word-break: break-all;
+}
+
+.stalemenu__none {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.stalemenu__foot {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+/* ----------------------------------------------------------------- templates */
+
+.placeholders {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 2px var(--sp-3);
+  font-size: var(--fs-sm);
+  margin-top: 4px;
+}
+
+.placeholders dt {
+  font-family: var(--font-mono);
+  color: var(--accent);
+}
+
+.placeholders dd {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.template-preview {
+  padding: 6px 8px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg-subtle);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  word-break: break-all;
+  color: var(--text-muted);
+}
+
+.pathlist {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px var(--sp-3);
+  font-size: var(--fs-sm);
+}
+
+.pathlist__label {
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.pathlist__value {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  word-break: break-all;
+  min-width: 0;
+}
+
+.dryrun-card {
+  border: 1px solid var(--warn-border);
+  background: var(--warn-bg);
+  border-radius: var(--radius);
+  padding: var(--sp-3);
+}
+
+.dryrun-card--off {
+  border-color: var(--border);
+  background: var(--bg-surface);
+}
+
+/* ------------------------------------------------------------- danger zone */
+
+/*
+ * Deliberately unlike every other section: its own tint, a heavier left rule
+ * and a heading of its own, so a destructive control can never be mistaken for
+ * the preference above it.
+ */
+.dangerzone {
+  border: 1px solid var(--danger-border);
+  border-left: 3px solid var(--danger);
+  border-radius: var(--radius);
+  background: var(--danger-bg);
+  padding: var(--sp-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin-top: var(--sp-2);
+}
+
+.dangerzone__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--danger);
+}
+
+.dangerzone__title {
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.dangerzone__item {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+
+.dangerzone__text {
+  flex: 1 1 320px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.dangerzone__item-title {
+  font-size: var(--fs-base);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.dangerzone__item-body {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+.dangerzone__note {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.dangerzone__foot {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  border-top: 1px dashed var(--danger-border);
+  padding-top: var(--sp-2);
+}
+
+.dangerzone__item .btn {
+  flex: none;
+}
+
+/* Confirmation body — sits inside a red `notice`, so text colour is reclaimed. */
+
+.settings__confirm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  color: var(--text);
+  min-width: 0;
+}
+
+.settings__confirm code {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+
+.settings__confirm-keep {
+  color: var(--text-muted);
+}
+
+.settings__diff {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-sm);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.settings__diff th,
+.settings__diff td {
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.settings__diff thead th {
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  background: var(--bg-subtle);
+}
+
+.settings__diff tbody th {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.settings__diff tr:last-child th,
+.settings__diff tr:last-child td {
+  border-bottom: 0;
+}
+
+.settings__diff-from,
+.settings__diff-to {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  word-break: break-all;
+}
+
+.settings__diff-from {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+
+.settings__diff-to {
+  color: var(--text);
+}

@@ -1,0 +1,93 @@
+name: Rust
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  core:
+    name: Engine (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # The engine crate is platform-agnostic and the case-sensitivity of
+        # glob matching deliberately differs by platform, so it must be tested
+        # on both rather than only on the shipping target.
+        os: [windows-latest, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+
+      - name: Format
+        run: cargo fmt --all --check
+
+      - name: Clippy
+        run: cargo clippy -p autotidy-core -p autotidy-cli --all-targets
+
+      - name: Test
+        run: cargo test -p autotidy-core -p autotidy-cli
+
+  parity:
+    name: Differential parity vs Python 1.5.0
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # The Python engine is the reference implementation under test, so its
+      # real runtime dependencies are needed — but not PyQt6, since the parity
+      # harness drives utils.py directly and never constructs a UI.
+      - name: Install reference-engine dependencies
+        run: pip install Send2Trash
+
+      - name: Dry parity (decision logic)
+        run: python tools/parity/run_parity.py
+
+      # Exercises the commit path — real renames and collision claiming — which
+      # lives inside `if not dry_run:` and a dry run cannot reach.
+      - name: Wet parity (commit path)
+        run: python tools/parity/wet_parity.py
+
+  app:
+    name: Tauri app build
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - run: npm ci
+      - name: Typecheck frontend
+        run: npm run typecheck
+      - name: Build frontend
+        run: npm run build
+      - name: Build app
+        run: cargo build -p autotidy-app --release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: autotidy-windows
+          path: |
+            target/release/AutoTidy.exe
+            target/release/bundle/
+          if-no-files-found: warn

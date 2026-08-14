@@ -1,284 +1,314 @@
-<img src="assets/autotidyicon.ico" alt="AutoTidy Icon" width="96"/>
+<img src="assets/autotidyicon.ico" alt="" width="88" align="left" hspace="12" vspace="4"/>
 
-# 🚀 AutoTidy — Automated File Organizer
+# AutoTidy
 
-[![Version](https://img.shields.io/badge/version-1.5.0-blue.svg?style=for-the-badge)](constants.py)
-[![License: MPL-2.0](https://img.shields.io/badge/License-MPL_2.0-blue.svg?style=for-the-badge)](LICENSE)
-[![Contributions Welcome](https://img.shields.io/badge/contributions-welcome-orange.svg?style=for-the-badge)](#-contributing)
+**Automatic file organisation for Windows.** Point it at the folders that get
+messy — Downloads, Desktop, Screenshots — describe what should happen to what,
+and it keeps them tidy in the background.
 
-> **Automatically tidy up cluttered folders.**  
-> AutoTidy watches chosen folders and organizes files using simple rules you set. Move, copy, or delete files based on age and/or name patterns.
+<br clear="left"/>
 
----
-
-## 📖 Table of Contents
-
-- [Overview](#overview)
-- [What’s New in 1.5](#whats-new-in-15)
-- [✨ Core Features](#-core-features)
-- [⚙️ How It Works](#️-how-it-works)
-- [📦 Installation](#-installation)
-- [🛠️ Run from Source](#️-run-from-source)
-- [🔧 Configuration](#-configuration)
-- [🗂️ Logs, History & Undo](#️-logs-history--undo)
-- [💻 Tech Stack](#-tech-stack)
-- [🔁 Reproducibility & Security](#-reproducibility--security)
-- [🙏 Dependencies & Acknowledgments](#-dependencies--acknowledgments)
-- [📚 Citation & Checklist Audit](#-citation--checklist-audit)
-- [📁 Key Files](#-key-files)
-- [⚠️ Known Limitations](#️-known-limitations)
-- [🗺️ Roadmap / Future Ideas](#️-roadmap--future-ideas)
-- [🤝 Contributing](#-contributing)
-- [📜 Disclaimer](#-disclaimer)
-- [📄 License](#-license)
+[![Version](https://img.shields.io/badge/version-2.0.0-1f6feb?style=flat-square)](Cargo.toml)
+[![Rust](https://img.shields.io/badge/Rust-2021-b7410e?style=flat-square&logo=rust&logoColor=white)](crates/)
+[![Tauri](https://img.shields.io/badge/Tauri-2-24c8db?style=flat-square&logo=tauri&logoColor=white)](src-tauri/)
+[![License](https://img.shields.io/badge/license-MPL--2.0-blue?style=flat-square)](LICENSE)
+[![Installer](https://img.shields.io/badge/installer-1.8%20MB-success?style=flat-square)](#install)
 
 ---
 
-## Overview
-
-**AutoTidy** helps keep folders like **Downloads**, **Screenshots**, or your **Desktop** clean.  
-You choose the folders and set simple rules. AutoTidy does the rest in the background on a schedule you control.
-
----
-
-## What’s New in 1.5
-
-- **AND / OR rule logic per folder** — match by **all** conditions (AND) or **any** (OR). Setting **age = 0** makes it a name-only rule.
-- **Enable/Disable rules** without deleting them.
-- **Custom destinations** for move/copy with a **Browse…** button; supports env vars and relative paths.
-- **Exclusions everywhere**: per-folder **ignore patterns** (glob or regex) + a **Global Excluded Folders** list.
-- **Preview Matches** — see what a rule will catch before you run it.
-- **Better logs & history**: timestamps, severity filter, keyword search, export, “Skipped” entries, and **double-click to open paths**.
-- **Status at a glance**: colored status dot, Dry-Run indicator, and **Next Run** time.
-- **Notification levels respected** end-to-end (None / Errors / Summary / All).
-- **Unique scan IDs** so each run is clearly grouped in History.
-- **Windows-only startup** toggle; it’s disabled on other platforms.
+> ### 2.0 is a full rewrite in Rust
+>
+> AutoTidy was a Python + PyQt6 app through 1.5.0. Version 2.0 rebuilds it on
+> **Rust and Tauri** — a 1.8 MB installer instead of 73 MB, with recursive
+> scanning and real-time folder watching that the old architecture couldn't
+> support.
+>
+> **Upgrading is nothing to do.** Your rules, settings and history are read in
+> place from `%APPDATA%\AutoTidy` exactly as they are. The rewrite was verified
+> against the old engine file-by-file — see [Verification](#verification).
 
 ---
 
-## ✨ Core Features
+## What it does
 
-- **Watch multiple folders**.
-- **Rule-based actions**: Move, Copy, Delete to Trash, or Permanently Delete.
-- **Flexible matching**:
-  - **Age (days)** and/or **Filename pattern** (wildcards or regex).
-  - Choose **AND** or **OR** logic per folder.
-- **Custom archive routing**:
-  - Template-based archive paths (e.g., `_Cleanup/{YYYY}-{MM}-{DD}`).
-  - Or send to **your own destination folder**.
-- **Exclusions**:
-  - **Per-folder** ignore patterns (glob/regex).
-  - **Global excluded folders** that apply to all rules.
-- **Dry Run mode** to simulate changes safely.
-- **Tray app** with configurable **scan interval**.
-- **Logs & History** with filters, search, export, and **Undo** for Move/Copy.
-- **Desktop notifications** that follow your chosen **notification level**.
+You define rules per folder. Each rule matches files by **age**, by **name
+pattern**, or both, and then does one thing with them:
 
----
+| Action | What happens |
+|---|---|
+| **Move** | Relocated into a dated archive folder, or anywhere you choose |
+| **Copy** | Duplicated, original left alone |
+| **Delete to Recycle Bin** | Recoverable through Windows |
+| **Delete permanently** | Irreversible — the UI makes sure you know |
 
-## ⚙️ How It Works
+Everything it does is written to a log you can browse, filter and **undo**.
 
-1. **Add folders** to monitor.
-2. **Create a rule** per folder:
-   - Set **Age (days)** and a **Filename pattern** (e.g., `*.jpg`, `temp_*` or regex).
-   - Pick **AND** (all must match) or **OR** (any can match).
-   - Choose the **Action**: Move, Copy, Delete to Trash, or Permanently Delete.
-   - (Optional) Set a **custom destination** for Move/Copy with **Browse…**.
-   - (Optional) Add **exclusion patterns** to skip files you never want touched.
-3. **Preview Matches** (optional) to see sample results.
-4. **Start Monitoring**. AutoTidy scans on your schedule and applies the rules.
+### Features
 
-> **Note on logic:**  
-> - **AND** = file must match **age** *and* **name pattern** (unless age is 0).  
-> - **OR** = file is processed if it matches **age** *or* **name pattern**.
+- **Age and pattern matching** — combined with AND or OR. Age `0` makes a rule
+  name-only.
+- **Glob or regex** patterns, with per-rule exclusions and a global
+  never-touch-these-folders list.
+- **Preview matches** before a rule ever runs.
+- **Dry-run mode** — simulate everything, change nothing.
+- **Recursive scanning** to a depth you choose. *(new in 2.0)*
+- **Watch mode** — react as files appear instead of polling. *(new in 2.0)*
+- **Templated destinations**: `_Cleanup/{YYYY}-{MM}-{DD}`, with `{FILENAME}`,
+  `{EXT}` and `{ORIGINAL_FOLDER_NAME}` too.
+- **Full history and undo**, grouped by scan run.
+- **Explorer right-click** → "Add to AutoTidy". *(now works without admin
+  rights — see [Fixed in 2.0](#fixed-in-20))*
+- Lives in the system tray. Dark mode follows Windows.
 
 ---
 
-## 📦 Installation
+## Install
 
-### Windows (recommended)
-- Download the **Setup** EXE from Releases (or build it yourself).
-- The installer supports **Per-user** (no admin) or **All users** (admin) installation.
-- Auto-created Start Menu shortcut; optional Desktop shortcut.
+Download the latest installer from
+[Releases](https://github.com/KhazP/AutoTidy/releases) and run it.
 
-### Linux / macOS
-- Run from source (see below) or package with PyInstaller.  
-- The **startup on login** toggle is **Windows-only** in v1.5.
+> **2.0.0 is not released yet.** The version on the Releases page is still
+> 1.5.0 (Python). Build 2.0 [from source](#build-from-source) in the meantime.
+
+Windows 10 or 11. The installer is per-user — no administrator rights needed.
+WebView2 is already present on Windows 11 and current Windows 10; if it's
+missing the installer fetches it.
+
+> **Upgrading from 1.x?** The installer detects the old version and offers to
+> remove it first. Take the offer — the two installers use different systems, so
+> Windows won't replace it automatically, and leaving both installed means two
+> copies of AutoTidy organising the same folders at once.
+
+> **Code signing.** Release binaries are **not signed yet.** An application to
+> the [SignPath Foundation](https://signpath.org/)'s free programme for
+> open-source projects is pending; the [code signing policy](#code-signing-policy)
+> below describes the arrangement it will put in place.
+>
+> Until then SmartScreen will warn. Choose *More info → Run anyway*, verify the
+> SHA-256 checksum published with the release, or build it yourself from source
+> below.
 
 ---
 
-## 🛠️ Run from Source
+## How it compares to 1.5.0
 
-**Prereqs**
-- Python **3.10+**
+Measured on the same machine, same workload:
 
-**Recommended environment setup**
+| | 1.5.0 | 2.0.0 | |
+|---|---:|---:|---|
+| Installer | 73 MB | **1.8 MB** | 41× smaller |
+| Executable | 33.5 MB | **4.9 MB** | 6.9× smaller |
+| Launch | unpacked 33.5 MB to `%TEMP%` every time | runs directly | — |
+| Right-click → Add folder | 74 ms | **21 ms** | 3.5× faster |
+| Organising 8,000 files | 7.4 s | **0.6 s** | 12× faster |
+| Scanning 20,000 files recursively | *not supported* | **1.6 s** | — |
+
+Honesty about that speed column: if you're tidying a Downloads folder with a
+few dozen files once an hour, **you will not notice any of it**. The old engine
+took about 13 ms for that. The size, the launch behaviour, and the two new
+scanning modes are the real differences.
+
+Full numbers, methodology and the workload where the rewrite buys you nothing
+are in the [2.0.0 release notes](CHANGELOG.md#performance). Reproduce them
+yourself with `python tools/bench/benchmark.py --markdown`.
+
+### Fixed in 2.0
+
+Bugs found by diffing the new engine against the old one, all of which existed
+in 1.5.0:
+
+- **The Explorer context menu needed administrator rights** and refused to
+  install without them. It now uses the per-user registry hive.
+- **`--add-folder` could silently discard your other changes.** It launched a
+  second process that wrote `config.json` while the running app held a stale
+  copy and overwrote it on quit.
+- **Renaming destination templates lost the rename.** A destination of
+  `{FILENAME}_backup{EXT}` filed the file under its original name.
+- **Undoing a whole run left no record**, because only single-item undos were
+  logged.
+- **Config writes weren't atomic**, so an interrupted save could corrupt
+  `config.json`.
+- **Undo now tells you up front** when something can't be reversed, instead of
+  asking you to confirm and then failing.
+
+---
+
+## Configuration
+
+Settings and rules live in `%APPDATA%\AutoTidy\config.json`; history in
+`autotidy_history.jsonl` beside it. Both are plain text and safe to read.
+
+**Archive template** — `_Cleanup/{YYYY}-{MM}-{DD}` by default. Relative paths
+resolve inside the monitored folder. Available placeholders: `{YYYY}` `{MM}`
+`{DD}` `{FILENAME}` `{EXT}` `{ORIGINAL_FOLDER_NAME}`.
+
+**Exclusion patterns** are checked *before* age and name, so an excluded file is
+never touched no matter what else matches:
+
+| Pattern | Effect |
+|---|---|
+| `*.tmp` | skip temp files |
+| `build/` | skip a whole subfolder |
+| `~$*.docx` | skip Office autosave files |
+| `^backup_\d{4}` | regex, when the rule has regex enabled |
+
+> On Windows, glob patterns are **case-insensitive** — `*.pdf` matches
+> `Report.PDF`. This matches how 1.5.0 behaved. Regex patterns are
+> case-sensitive.
+
+---
+
+## Build from source
+
+Needs [Rust](https://rustup.rs) (stable), [Node](https://nodejs.org) 20+, and
+the MSVC build tools.
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate  # Windows PowerShell: .venv\Scripts\Activate.ps1
+npm install
+npm run tauri dev      # run with hot-reloading UI
+npm run tauri build    # produce target/release/bundle/nsis/
 ```
 
-**Install deps**
+### Layout
+
+| Path | |
+|---|---|
+| `crates/autotidy-core/` | The engine — matching, actions, history, undo, scanning. No GUI dependencies. |
+| `crates/autotidy-cli/` | Headless driver for the engine, used by the parity harness. |
+| `src-tauri/` | Desktop shell: tray, window, IPC, Windows registry integration. |
+| `src/` | React + TypeScript UI. |
+| `tools/parity/` | Differential test harness against the 1.5.0 engine. |
+| `legacy/` | The retired Python 1.5.0 engine. Not built, not shipped — [here's why](legacy/README.md). |
+
+Keeping the engine free of GUI dependencies is deliberate: the same code is
+driven by the app, by the CLI, and by the test harness.
+
+---
+
+## Verification
 
 ```bash
-pip install -r requirements.txt
+cargo test                          # 246 tests
+python tools/parity/run_parity.py   # decisions, 12 rule variants
+python tools/parity/wet_parity.py   # resulting files, 11 rule variants
 ```
 
-**Run tests**
+Rewriting a program that **deletes people's files** is not something to do on
+confidence alone. So the old engine is kept as an executable specification, and
+both engines are run over a purpose-built corpus and their output compared.
 
-```bash
-PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest
-```
+The corpus targets the places a port silently breaks: files straddling every age
+boundary, unicode and spaces and glob metacharacters in names, mixed-case
+extensions, pre-seeded collisions in the destination, and files already sitting
+inside the archive folder.
 
-**Run**
+Two harnesses, because one isn't enough. The dry-run harness compares the
+*decisions* each engine makes. But 1.5.0's collision handling lives inside
+`if not dry_run:`, so a dry run can never reach it — the second harness runs
+both engines **for real** over disposable copies and diffs the resulting file
+trees byte-for-byte.
 
-```bash
-python main.py
-```
-
-**Build (example)**
-
-```bash
-pyinstaller --noconfirm --clean --name AutoTidy --icon assets/autotidyicon.ico --add-data "assets/autotidyicon.ico;assets" main.py
-```
-
-(Adjust for your layout; see your `dist/` output. The Windows installer is built with Inno Setup.)
+That's how the case-sensitivity and template-rename bugs above were found.
 
 ---
 
-## 🔧 Configuration
+## Known limitations
 
-* Rules and settings are saved to a user config (e.g., `%APPDATA%/AutoTidy/config.json` on Windows, `~/.config/AutoTidy/config.json` on Linux).
-* **Notification Level**: None / Errors Only / Summary / All.
-* **Scan Interval**: minutes between scans.
-* **Archive Template**: `_Cleanup/{YYYY}-{MM}-{DD}` by default; supports `{YYYY}`, `{MM}`, `{DD}`, `{FILENAME}`, `{EXT}`, `{ORIGINAL_FOLDER_NAME}` and more.
-* **Global Excluded Folders**: list that always gets ignored.
-
-### Exclusion Patterns (per folder)
-
-* **Glob examples**
-
-  * `*.tmp` — ignore temp files
-  * `cache/` — ignore a `cache` directory
-  * `~$*.docx` — ignore Office autosave files
-* **Regex examples** (when regex is enabled)
-
-  * `^backup_\d{4}` — `backup_2024*` etc.
-  * `\.(log|bak)$` — endings like `.log` or `.bak`
-
-> Exclusions are checked first. If a file matches an exclusion, it’s **skipped**, even if it matches your rule.
+- **Windows only.** The engine is cross-platform and its tests run on Linux in
+  CI, but the tray, autostart and context-menu integration are Windows-specific.
+- **Not code-signed yet**, so SmartScreen will warn on first run.
+- **Permanent deletion cannot be undone.** Recycle Bin deletions are reversible
+  only through Windows itself.
+- Filename collisions get a counter (`_1`, `_2`), falling back to a timestamp
+  after 100 attempts.
 
 ---
 
-## 🗂️ Logs, History & Undo
+## Privacy
 
-* **Logs**: timestamps, severity filter (Info/Warning/Error), keyword search, **Clear/Copy/Save**.
-* **History**:
+**AutoTidy collects nothing.** There is no telemetry, no analytics, no crash
+reporting, and no network access of any kind — the application never makes an
+outbound connection.
 
-  * Each scan has a **unique ID**.
-  * Filter and search; see **Skipped** entries (e.g., due to exclusions).
-  * **Double-click** a row to open the file path (or copy it if missing).
-  * **Undo** Move/Copy actions from History/Undo dialog.
+Everything it writes stays on your machine, under `%APPDATA%\AutoTidy`:
 
----
+| File | Contents |
+|---|---|
+| `config.json` | Your rules and settings |
+| `autotidy_history.jsonl` | A record of every file action taken, so it can be undone |
+| `autotidy.log` | Diagnostic log, rotated at 5 MB |
 
-## 💻 Tech Stack
+These necessarily contain paths and filenames from the folders you asked
+AutoTidy to organise. They are never transmitted anywhere. Deleting the folder
+removes all of it.
 
-* **Python** (3.10+)
-* **PyQt6** for the interface
-* **Threaded worker** for background scans
-* Uses standard libs: `os`, `pathlib`, `shutil`, `datetime`, `json`, `threading`, `queue`, `fnmatch`, and platform helpers.
-
----
-
-## 🔁 Reproducibility & Security
-
-* AutoTidy behavior is deterministic for a given config and filesystem state; no stochastic model training/inference is used.
-* The project uses version-controlled source and automated tests in `tests/`.
-* CI runs pytest with coverage via `.github/workflows/tests.yml`.
-* No API keys or credentials are required for core functionality. Do not commit sensitive local paths or private data snapshots.
+The installer downloads the Microsoft WebView2 runtime from Microsoft if it
+isn't already present on the system. That is the only network activity
+associated with the project, it happens once at install time, and it is
+performed by Microsoft's own bootstrapper.
 
 ---
 
-## 🙏 Dependencies & Acknowledgments
+## Code signing policy
 
-* Runtime dependencies are declared in `requirements.txt` and `pyproject.toml`.
-* Primary libraries used:
+> **Status: pending.** An application to the SignPath Foundation is in progress.
+> This policy describes the arrangement that will apply once it is approved, and
+> is published here because the Foundation requires a project to have one. No
+> release is signed yet — see [Install](#install).
 
-  * `PyQt6` for the desktop UI.
-  * `Send2Trash` for safe file deletion to recycle bin/trash.
+Release binaries are signed by [SignPath.io](https://signpath.io/), with a free
+code signing certificate provided by the
+[SignPath Foundation](https://signpath.org/) for open-source projects.
 
-* Contributor workflow and collaboration details are documented in the Contributing section.
+Because the certificate is issued in the SignPath Foundation's name, Windows
+shows **SignPath Foundation** as the publisher on signed AutoTidy binaries. That
+is expected and correct — it identifies who vouches for the signature, not who
+wrote the software.
 
----
+### Roles
 
-## 📚 Citation & Checklist Audit
+AutoTidy is maintained by a single developer, who fills every role:
 
-* Citation metadata is available in `CITATION.cff`.
-* Code-checklist audit results are tracked in `docs/CODE_CHECKLIST_AUDIT.md`.
-* Data/model checklist items are marked not applicable because AutoTidy is a desktop file-organization utility rather than a model-training repository.
+| Role | Who | Responsibility |
+|---|---|---|
+| **Author** | [@KhazP](https://github.com/KhazP) | Writes and commits the source |
+| **Reviewer** | [@KhazP](https://github.com/KhazP) | Reviews changes before they are merged to `main` |
+| **Approver** | [@KhazP](https://github.com/KhazP) | Approves each signing request before a release is signed |
 
----
+Every signing request is approved manually. Signing is never automatic.
 
-## 📁 Key Files
+### What gets signed
 
-<details>
-<summary>Click to expand</summary>
+Only binaries built by [GitHub Actions](.github/workflows/) from source in this
+repository, at a tagged commit. Nothing is signed from a developer machine, and
+no third-party binary is submitted for signing.
 
-* `main.py` — App entry; sets up tray icon and windows.
-* `ui_config_window.py` — Main configuration window and rule editor.
-* `ui_settings_dialog.py` — App-wide settings (interval, archive template, notifications, etc.).
-* `worker.py` — Background scanner that applies rules and posts results.
-* `config_manager.py` — Loads/saves config; templates; global exclusions; action normalization.
-* `startup_manager.py` — Windows startup handling; disabled on non-Windows in v1.5.
-* `utils.py` — Helpers (file checks, path rendering, previews).
-* `constants.py` — App constants and placeholders.
-* `tests/` — Automated tests and PyQt stubs.
-* `assets/autotidyicon.ico` — App icon.
-* `README.md` — This file.
+### Data handling
 
-</details>
-
----
-
-## ⚠️ Known Limitations
-
-* Very large folders can take time to scan (runs in a background thread).
-* Regex must be valid; invalid patterns are reported and ignored.
-* Frequent scans across many large folders can increase resource use.
-* Filename collisions are handled with simple counters (e.g., `_1`, `_2`).
+AutoTidy collects no user data — see [Privacy](#privacy) above.
 
 ---
 
-## 🗺️ Roadmap / Future Ideas
+## Contributing
 
-* Specific-time scheduling options (beyond interval).
-* Smarter collision handling / conflict resolution.
-* Optional, more detailed per-rule analytics.
-
----
-
-## 🤝 Contributing
-
-1. **Fork** the repo
-2. Create a branch: `git checkout -b feat/my-improvement`
-3. **Develop & test** your changes
-4. Commit: `git commit -m "feat: my improvement"`
-5. Push: `git push origin feat/my-improvement`
-6. Open a **Pull Request** to `main`
-
-Please keep changes aligned with the current structure and style.
+1. Fork, then branch: `git checkout -b feat/my-improvement`
+2. Make your change, and keep `cargo test`, `cargo clippy`, `cargo fmt --check`
+   and `npm run typecheck` clean
+3. **If you touch the engine, run both parity harnesses.** They are the safety
+   net for a program that moves and deletes files.
+4. Open a pull request against `main`
 
 ---
 
-## 📜 Disclaimer
+## Disclaimer
 
-AutoTidy **moves or deletes files** based on your rules. Test with **non-critical folders** first.
-Use at your own risk; the authors aren’t liable for data loss.
+AutoTidy **moves and deletes files** according to rules you write. Try new rules
+against a folder you don't care about first, and use dry-run mode. The authors
+aren't liable for data loss.
 
----
+## License
 
-## 📄 License
+[MPL-2.0](LICENSE). The Rust and Tauri stack is MIT/Apache-2.0 throughout —
+unlike 1.5.0, which shipped GPL-v3 PyQt6 inside an MPL-2.0 project.
 
-MPL-2.0 — see [LICENSE](LICENSE).
+Citation metadata: [`CITATION.cff`](CITATION.cff).

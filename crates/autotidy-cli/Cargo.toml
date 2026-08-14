@@ -1,0 +1,23 @@
+[package]
+name = "autotidy-cli"
+description = "Headless AutoTidy engine driver, used as the differential-testing harness against the Python 1.5.0 engine."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+# NOT "autotidy". The Tauri app declares `[[bin]] name = "AutoTidy"`, and
+# Windows filenames are case-insensitive — so both crates would link to the same
+# `target/release/autotidy.exe` and silently overwrite each other. The last
+# build wins, which meant `cargo tauri build` left the GUI app sitting where the
+# CLI belongs: the wet parity harness then "ran the engine", actually launched a
+# window, moved nothing, and exited 0. Keep these names distinct.
+[[bin]]
+name = "autotidy-cli"
+path = "src/main.rs"
+
+[dependencies]
+autotidy-core = { path = "../autotidy-core" }
+serde_json.workspace = true
+tracing.workspace = true

@@ -1,0 +1,33 @@
+# Normalise line endings so the repo is consistent across contributors.
+* text=auto eol=lf
+*.rs      text eol=lf
+*.ts      text eol=lf
+*.tsx     text eol=lf
+*.css     text eol=lf
+*.md      text eol=lf
+*.toml    text eol=lf
+*.json    text eol=lf
+*.py      text eol=lf
+*.ps1     text eol=crlf
+*.bat     text eol=crlf
+
+# Binary assets — never diff or normalise these.
+*.ico     binary
+*.png     binary
+*.icns    binary
+*.exe     binary
+
+# --- GitHub language statistics -------------------------------------------
+#
+# AutoTidy is a Rust + Tauri application. The Python under legacy/ is the
+# retired 1.5.0 engine, kept only as the behavioural reference that
+# tools/parity/ diffs the Rust port against. Without this it would dominate
+# the language bar and the repository would read as a Python project.
+legacy/**            linguist-vendored
+
+# Lockfiles are generated; they shouldn't count as source or clutter diffs.
+Cargo.lock           linguist-generated
+package-lock.json    linguist-generated
+
+# Tauri writes these at build time.
+src-tauri/gen/**     linguist-generated
