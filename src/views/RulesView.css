@@ -1,0 +1,430 @@
+/* Rules: folder list on the left, the selected folder's rule on the right. */
+
+.rules {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.rules__list {
+  flex: none;
+  width: 300px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border);
+  background: var(--bg-surface);
+}
+
+/* Give the editor back some room when the window is narrow. */
+@media (max-width: 1000px) {
+  .rules__list {
+    width: 228px;
+  }
+}
+
+.rules__toolbar {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-control-gap);
+  padding: var(--sp-2);
+  border-bottom: 1px solid var(--border);
+}
+
+/* The exclusions launcher sits under the list, not above it. */
+.rules__toolbar--foot {
+  border-bottom: 0;
+  border-top: 1px solid var(--border);
+}
+
+/* Stale-data warning, between the view header and the two panes. */
+.rules__stale {
+  flex: none;
+  margin: 0;
+  border-radius: 0;
+  border-left: 0;
+  border-right: 0;
+  border-top: 0;
+}
+
+.rules__listtitle {
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  color: var(--text);
+}
+
+.rules__scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.rulerow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 var(--sp-2) 0 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.rulerow:hover {
+  background: var(--bg-hover);
+}
+
+.rulerow--selected,
+.rulerow--selected:hover {
+  background: var(--bg-selected);
+  color: var(--fg-selected);
+}
+
+.rulerow input[type="checkbox"] {
+  flex: none;
+  width: 15px;
+  height: 15px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.rulerow__btn {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  padding: 7px 4px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+
+.rulerow__name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  font-weight: 600;
+}
+
+.rulerow__name > span:first-of-type {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rulerow__meta {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+}
+
+.rulerow--selected .rulerow__meta {
+  color: inherit;
+  opacity: 0.8;
+}
+
+.rulerow--off .rulerow__name {
+  color: var(--text-faint);
+  font-weight: 400;
+}
+
+.rules__editor {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-app);
+}
+
+.editor__head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.editor__path {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.editor__pathname {
+  font-size: var(--fs-lg);
+  font-weight: 600;
+}
+
+.editor__pathfull {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  word-break: break-all;
+}
+
+.editor__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+/* Sticky save bar; only present while the draft is dirty. */
+.editor__savebar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-4);
+  border-top: 1px solid var(--border);
+  background: var(--info-bg);
+  border-top-color: var(--info-border);
+  font-size: var(--fs-sm);
+}
+
+/*
+ * The rule restated as a sentence. This is the single most useful thing on the
+ * screen — it is the only place the five controls above are resolved into what
+ * will actually happen to the user's files — so it leads the pane.
+ */
+.rule-summary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  padding: var(--sp-2) var(--sp-3);
+  border-left: 3px solid var(--accent);
+  background: var(--accent-soft);
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+
+.rule-summary__text {
+  font-size: var(--fs-md);
+  line-height: 1.45;
+}
+
+/*
+ * Secondary by size only. --text-muted on the accent-soft panel measures 5.8:1
+ * in dark mode, under this app's 7:1 floor, and this sentence describes what
+ * happens to the user's files — it does not get to be hard to read.
+ */
+.rule-summary__more {
+  font-size: var(--fs-sm);
+}
+
+/* The Action group when it is set to something unrecoverable. */
+.fieldset--danger {
+  border-color: var(--danger);
+  background: var(--danger-bg);
+}
+
+.fieldset--danger > legend {
+  color: var(--danger);
+}
+
+.notice__list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: var(--sp-1);
+  padding-left: var(--sp-3);
+  list-style: disc;
+}
+
+/* Placeholder reference for the destination field — a disclosure rather than a
+   tooltip, because it is a list the user reads while typing, not a hint. */
+.placeholders {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-surface);
+}
+
+.placeholders > summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-control-gap);
+  padding: var(--sp-1) var(--sp-2);
+  cursor: pointer;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+.placeholders > summary:hover {
+  color: var(--text);
+}
+
+.placeholders__list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: var(--sp-2);
+  border-top: 1px solid var(--border);
+  font-size: var(--fs-sm);
+}
+
+.placeholders__list li {
+  display: flex;
+  gap: var(--sp-3);
+  align-items: baseline;
+}
+
+.placeholders__list code {
+  flex: none;
+  width: 16ch;
+  font-family: var(--font-mono);
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.placeholders__list span {
+  min-width: 0;
+  color: var(--text-muted);
+}
+
+.placeholders__foot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-control-gap);
+  flex-wrap: wrap;
+  padding: 0 var(--sp-2) var(--sp-2);
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+.exclusions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.exclusion-row {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+}
+
+/* Column so a per-row error can sit under its own input rather than shoving
+   the delete button out of line. */
+.exclusion-row__field {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.exclusion-row .input {
+  flex: 1 1 auto;
+}
+
+/* Destructive action, kept away from the save bar and given its consequence in
+   words rather than relying on the button label alone. */
+.editor__danger {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  align-items: flex-start;
+  padding-top: var(--sp-2);
+  border-top: 1px solid var(--border);
+}
+
+.editor__danger .field__hint {
+  max-width: 62ch;
+}
+
+.preview-list {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-subtle);
+  max-height: 320px;
+  overflow: auto;
+  padding: var(--sp-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+}
+
+.preview-list li {
+  padding: 2px 4px;
+  word-break: break-all;
+}
+
+.preview-list li:nth-child(odd) {
+  background: var(--bg-surface);
+}
+
+.template-card {
+  display: flex;
+  gap: var(--sp-3);
+  align-items: flex-start;
+  width: 100%;
+  padding: var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-surface);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+
+.template-card:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.template-card__body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.template-card__name {
+  font-weight: 600;
+}
+
+.template-card__desc {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+.chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-subtle);
+  font-size: var(--fs-sm);
+  max-width: 100%;
+}
+
+.chip > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

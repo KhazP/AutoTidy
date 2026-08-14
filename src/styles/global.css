@@ -1,0 +1,1177 @@
+/*
+ * AutoTidy — global stylesheet.
+ *
+ * Tokens first, then a small reset, then the shared control vocabulary
+ * (buttons, fields, tables, cards, banners, dialogs, toasts). Views own their
+ * layout in sibling .css files next to the component that imports them.
+ *
+ * This is a Windows desktop utility, so the target is dense and functional:
+ * 13px Segoe UI, 28px controls, 30px rows, square-ish corners, no gradients.
+ */
+
+:root {
+  color-scheme: light dark;
+
+  --font-ui: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system,
+    "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "Cascadia Mono", Consolas, ui-monospace, "SF Mono",
+    "Liberation Mono", monospace;
+
+  --fs-xs: 11px;
+  --fs-sm: 12px;
+  --fs-base: 13px;
+  --fs-md: 14px;
+  --fs-lg: 16px;
+  --fs-xl: 19px;
+
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+
+  /*
+   * Semantic spacing. The --sp-* ramp is the raw base-4 scale; these name the
+   * *purpose* so a density change is one edit rather than a sweep through every
+   * component. Component-internal spacing and layout spacing are deliberately
+   * separate ramps (see design-system/spacing-and-grid).
+   */
+  --space-control-gap: var(--sp-2); /* between sibling controls in a row */
+  --space-field-gap: var(--sp-3); /* between fields inside one group */
+  --space-group-gap: var(--sp-3); /* between fieldsets / cards */
+  --space-section-gap: var(--sp-4); /* between major regions of a view */
+  --space-view-pad: var(--sp-4); /* the padding a scrollable view carries */
+
+  --radius: 4px;
+  --radius-sm: 3px;
+
+  --row-h: 30px;
+  --control-h: 28px;
+
+  /* Light */
+  --bg-app: #f3f3f3;
+  --bg-surface: #ffffff;
+  --bg-subtle: #f7f7f7;
+  --bg-sunken: #eaeaea;
+  --bg-hover: rgba(0, 0, 0, 0.045);
+  --bg-active: rgba(0, 0, 0, 0.085);
+  --bg-selected: #cfe4f7;
+  --fg-selected: #10314f;
+
+  --border: #dcdcdc;
+  --border-strong: #b3b3b3;
+
+  --text: #1a1a1a;
+  --text-muted: #5c5c5c;
+  --text-faint: #7d7d7d;
+
+  --accent: #0f6cbd;
+  --accent-hover: #115ea3;
+  --accent-active: #0c3b5e;
+  --accent-fg: #ffffff;
+  --accent-soft: #eff6fc;
+
+  --danger: #b52516;
+  --danger-hover: #93190c;
+  --danger-fg: #ffffff;
+  --danger-bg: #fdf3f2;
+  --danger-border: #edb6b0;
+
+  --warn: #7a5300;
+  --warn-bg: #fff8e6;
+  --warn-border: #f0d795;
+  --warn-strong: #b26b00;
+
+  --ok: #0e7a0b;
+  --ok-bg: #f1faf1;
+  --ok-border: #a9dfa7;
+
+  --info-bg: #eff6fc;
+  --info-border: #b6d6f2;
+
+  --focus-ring: #0f6cbd;
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.1), 0 0 1px rgba(0, 0, 0, 0.09);
+  --shadow-2: 0 10px 30px rgba(0, 0, 0, 0.2);
+  --scrim: rgba(0, 0, 0, 0.35);
+
+  /* Tooltips invert the surface so they never blend into what they explain. */
+  --tooltip-bg: #1f1f1f;
+  --tooltip-fg: #ffffff;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg-app: #1c1c1c;
+    --bg-surface: #262626;
+    --bg-subtle: #2c2c2c;
+    --bg-sunken: #171717;
+    --bg-hover: rgba(255, 255, 255, 0.06);
+    --bg-active: rgba(255, 255, 255, 0.11);
+    --bg-selected: #10395c;
+    --fg-selected: #dcebf8;
+
+    --border: #3a3a3a;
+    --border-strong: #545454;
+
+    --text: #f0f0f0;
+    --text-muted: #a8a8a8;
+    --text-faint: #8b8b8b;
+
+    --accent: #4cc2ff;
+    --accent-hover: #64cbff;
+    --accent-active: #3aa0d6;
+    --accent-fg: #06263a;
+    --accent-soft: #12303f;
+
+    --danger: #ff8f85;
+    --danger-hover: #ffa9a1;
+    --danger-fg: #360b06;
+    --danger-bg: #33201e;
+    --danger-border: #6b3730;
+
+    --warn: #f2c661;
+    --warn-bg: #332a15;
+    --warn-border: #6b5825;
+    --warn-strong: #f2c661;
+
+    --ok: #6ccb70;
+    --ok-bg: #1b2c1c;
+    --ok-border: #34572f;
+
+    --info-bg: #16303f;
+    --info-border: #2d5871;
+
+    --focus-ring: #7cc7f5;
+    --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.5);
+    --shadow-2: 0 10px 30px rgba(0, 0, 0, 0.6);
+    --scrim: rgba(0, 0, 0, 0.55);
+
+    --tooltip-bg: #f2f2f2;
+    --tooltip-fg: #141414;
+  }
+}
+
+/* --------------------------------------------------------------------- reset */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: var(--fs-base);
+  line-height: 1.45;
+  color: var(--text);
+  background: var(--bg-app);
+  -webkit-font-smoothing: antialiased;
+  /* The shell owns all scrolling; the page itself must never scroll. */
+  overflow: hidden;
+}
+
+h1,
+h2,
+h3,
+h4,
+p,
+figure {
+  margin: 0;
+}
+
+ul,
+ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+:focus {
+  outline: none;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+  border-radius: var(--radius-sm);
+}
+
+::selection {
+  background: var(--bg-selected);
+  color: var(--fg-selected);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border: 3px solid transparent;
+  background-clip: content-box;
+  border-radius: 8px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-faint);
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* ------------------------------------------------------------------ headings */
+
+/*
+ * HEADING CONVENTION (applies to every view — see the note in AppShell.tsx):
+ *
+ *   h1  exactly one per view, the view's name, class .page-title, rendered in
+ *       .view__header > .view__heading.
+ *   h2  a major region of that view (a list pane, an editor pane, the log
+ *       pane). Class .section-title. Use .visually-hidden when the region
+ *       already reads unambiguously without a visible label, so the outline
+ *       stays complete without adding chrome.
+ *   h3  a sub-region inside an h2 region. Class .subsection-title.
+ *   fieldset/legend  a GROUP OF FORM CONTROLS. Prefer this over a heading:
+ *       <legend> is the correct semantic for "these inputs belong together",
+ *       and it is announced when focus enters any control in the group.
+ *   Modal  <Modal> renders its title as an h2 inside the dialog. Dialogs are
+ *       their own document context, so content inside one starts at h3.
+ *
+ * Levels are never skipped. Element defaults below mean plain <h2>/<h3> markup
+ * already looks right; the classes exist for when you want to be explicit.
+ */
+
+h1 {
+  font-size: var(--fs-xl);
+  line-height: 1.25;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+h2 {
+  font-size: var(--fs-md);
+  line-height: 1.3;
+  font-weight: 600;
+}
+
+h3 {
+  font-size: var(--fs-base);
+  line-height: 1.35;
+  font-weight: 600;
+}
+
+h4 {
+  font-size: var(--fs-sm);
+  line-height: 1.4;
+  font-weight: 600;
+}
+
+.page-title {
+  font-size: var(--fs-xl);
+  line-height: 1.25;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.page-subtitle {
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  font-weight: 400;
+}
+
+.section-title {
+  font-size: var(--fs-md);
+  line-height: 1.3;
+  font-weight: 600;
+}
+
+.subsection-title {
+  font-size: var(--fs-base);
+  line-height: 1.35;
+  font-weight: 600;
+}
+
+/* A heading sitting on the same line as its controls. */
+.heading-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-control-gap);
+  flex-wrap: wrap;
+}
+
+.muted {
+  color: var(--text-muted);
+}
+
+.faint {
+  color: var(--text-faint);
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+}
+
+.truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ----------------------------------------------------------------- skip link */
+
+/*
+ * First thing in the tab order. Hidden off the top of the viewport until it
+ * takes focus, then it slides down over the header. It has to be position:fixed
+ * rather than clipped, because a clipped link cannot be scrolled to.
+ */
+.skip-link {
+  position: fixed;
+  top: 0;
+  left: var(--sp-3);
+  z-index: 200;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--accent);
+  border-top: 0;
+  border-radius: 0 0 var(--radius) var(--radius);
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-size: var(--fs-base);
+  font-weight: 600;
+  text-decoration: none;
+  box-shadow: var(--shadow-2);
+  transform: translateY(-110%);
+  transition: transform 120ms ease-out;
+}
+
+.skip-link:focus {
+  transform: translateY(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skip-link {
+    transition: none;
+  }
+}
+
+/* The skip target itself is programmatically focusable; never ring it. */
+[tabindex="-1"]:focus {
+  outline: none;
+}
+
+/* ------------------------------------------------------------------- buttons */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: var(--control-h);
+  padding: 0 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg-surface);
+  color: var(--text);
+  font-size: var(--fs-base);
+  font-weight: 400;
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.btn:active:not(:disabled) {
+  background: var(--bg-active);
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.btn--primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-fg);
+  font-weight: 600;
+}
+
+.btn--primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.btn--primary:active:not(:disabled) {
+  background: var(--accent-active);
+  border-color: var(--accent-active);
+}
+
+.btn--danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: var(--danger-fg);
+  font-weight: 600;
+}
+
+.btn--danger:hover:not(:disabled) {
+  background: var(--danger-hover);
+  border-color: var(--danger-hover);
+}
+
+.btn--ghost {
+  border-color: transparent;
+  background: transparent;
+}
+
+.btn--ghost:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: transparent;
+}
+
+.btn--sm {
+  min-height: 24px;
+  padding: 0 8px;
+  font-size: var(--fs-sm);
+}
+
+.btn--icon {
+  padding: 0;
+  width: var(--control-h);
+  min-width: var(--control-h);
+}
+
+.btn--sm.btn--icon {
+  width: 24px;
+  min-width: 24px;
+}
+
+.btn--danger-text {
+  color: var(--danger);
+}
+
+.btn-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}
+
+.spacer {
+  flex: 1 1 auto;
+}
+
+/* -------------------------------------------------------------------- fields */
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.field__label {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.field__hint {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+/*
+ * Errors carry an icon as well as colour and text, so the state survives
+ * greyscale, colour-blindness and a screenshot in a bug report.
+ */
+.field__error {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  font-size: var(--fs-sm);
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.field__error > svg {
+  flex: none;
+  margin-top: 2px;
+}
+
+.field__error-text {
+  min-width: 0;
+  font-weight: 600;
+}
+
+/* The recovery instruction is the useful half; keep it readable, not shouty. */
+.field__error-fix {
+  display: block;
+  font-weight: 400;
+}
+
+.input,
+.select,
+.textarea {
+  width: 100%;
+  min-height: var(--control-h);
+  padding: 3px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg-surface);
+  color: var(--text);
+  font-size: var(--fs-base);
+}
+
+.textarea {
+  min-height: 64px;
+  resize: vertical;
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+}
+
+.input:hover:not(:disabled),
+.select:hover:not(:disabled) {
+  border-color: var(--text-faint);
+}
+
+.input:disabled,
+.select:disabled,
+.textarea:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.input[aria-invalid="true"],
+.select[aria-invalid="true"],
+.textarea[aria-invalid="true"] {
+  border-color: var(--danger);
+  /* Reads as a 2px border without changing the box model, so the field does
+     not shift by a pixel when it flips into the error state. */
+  box-shadow: inset 0 0 0 1px var(--danger);
+}
+
+/* A control whose *choice* is destructive, not whose value is wrong. */
+.select--danger {
+  border-color: var(--danger);
+  box-shadow: inset 0 0 0 1px var(--danger);
+  background-color: var(--danger-bg);
+}
+
+.input--mono {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+}
+
+.input--number {
+  max-width: 110px;
+}
+
+.select {
+  cursor: pointer;
+  appearance: none;
+  padding-right: 26px;
+  background-image: linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: calc(100% - 14px) 12px, calc(100% - 9px) 12px;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
+
+.check {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 8px;
+  cursor: pointer;
+  min-width: 0;
+}
+
+.check input[type="checkbox"],
+.check input[type="radio"] {
+  margin: 2px 0 0;
+  width: 15px;
+  height: 15px;
+  accent-color: var(--accent);
+  cursor: pointer;
+  flex: none;
+}
+
+.check:has(input:disabled) {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.check__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.check__title {
+  font-size: var(--fs-base);
+}
+
+.check__hint {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+.input-with-button {
+  display: flex;
+  gap: var(--sp-2);
+  align-items: stretch;
+  min-width: 0;
+}
+
+.input-with-button .input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* --------------------------------------------------------------------- cards */
+
+.card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.card__header {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-subtle);
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+
+.card__title {
+  font-size: var(--fs-base);
+  font-weight: 600;
+}
+
+.card__body {
+  padding: var(--sp-3);
+}
+
+.fieldset {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--sp-3);
+  margin: 0;
+  min-width: 0;
+}
+
+.fieldset > legend {
+  padding: 0 6px;
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+
+.stack--tight {
+  gap: var(--sp-2);
+}
+
+.grid-2 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--sp-3);
+}
+
+/* -------------------------------------------------------------------- badges */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg-subtle);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  color: var(--text-muted);
+}
+
+.badge--ok {
+  background: var(--ok-bg);
+  border-color: var(--ok-border);
+  color: var(--ok);
+}
+
+.badge--danger {
+  background: var(--danger-bg);
+  border-color: var(--danger-border);
+  color: var(--danger);
+}
+
+.badge--warn {
+  background: var(--warn-bg);
+  border-color: var(--warn-border);
+  color: var(--warn);
+}
+
+.badge--info {
+  background: var(--info-bg);
+  border-color: var(--info-border);
+  color: var(--accent);
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--text-faint);
+}
+
+.dot--move {
+  background: #2e9e4f;
+}
+.dot--copy {
+  background: #2f7fd1;
+}
+.dot--delete_to_trash {
+  background: #d98324;
+}
+.dot--delete_permanently {
+  background: #cf3b2c;
+}
+
+/* ------------------------------------------------------------------- notices */
+
+.notice {
+  display: flex;
+  gap: var(--sp-2);
+  align-items: flex-start;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-subtle);
+  font-size: var(--fs-sm);
+}
+
+.notice__body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.notice__title {
+  font-weight: 600;
+  font-size: var(--fs-base);
+}
+
+.notice--error {
+  background: var(--danger-bg);
+  border-color: var(--danger-border);
+  color: var(--danger);
+}
+
+/*
+ * Louder than --error: reserved for the handful of states where continuing
+ * destroys the user's files. Heavier rule down the leading edge, larger title,
+ * and room for recovery actions so the banner is not a dead end.
+ */
+.notice--danger {
+  background: var(--danger-bg);
+  border-color: var(--danger);
+  border-left-width: 4px;
+  color: var(--danger);
+  padding: var(--sp-3);
+}
+
+.notice--danger .notice__title {
+  font-size: var(--fs-md);
+}
+
+.notice__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-control-gap);
+  flex-wrap: wrap;
+  margin-top: var(--sp-2);
+}
+
+.notice > svg {
+  flex: none;
+  margin-top: 2px;
+}
+
+.notice--warn {
+  background: var(--warn-bg);
+  border-color: var(--warn-border);
+  color: var(--warn);
+}
+
+.notice--info {
+  background: var(--info-bg);
+  border-color: var(--info-border);
+}
+
+.notice--ok {
+  background: var(--ok-bg);
+  border-color: var(--ok-border);
+  color: var(--ok);
+}
+
+.notice pre {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* --------------------------------------------------------------- empty state */
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  text-align: center;
+  padding: var(--sp-6) var(--sp-4);
+  color: var(--text-muted);
+  min-height: 160px;
+}
+
+.empty__icon {
+  color: var(--text-faint);
+  margin-bottom: var(--sp-1);
+}
+
+.empty__title {
+  font-size: var(--fs-md);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.empty__body {
+  font-size: var(--fs-base);
+  max-width: 46ch;
+}
+
+.empty__actions {
+  margin-top: var(--sp-2);
+}
+
+/*
+ * "Nothing here yet" and "we could not load it" must not look the same — a user
+ * shown an empty state after a load failure concludes their data is gone.
+ */
+.empty--error .empty__icon {
+  color: var(--danger);
+}
+
+.empty--error .empty__title {
+  color: var(--danger);
+}
+
+.empty__detail {
+  max-width: 60ch;
+  margin: 0;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius);
+  background: var(--danger-bg);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  text-align: left;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* -------------------------------------------------------------------- dialog */
+
+.modal {
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--bg-surface);
+  color: var(--text);
+  box-shadow: var(--shadow-2);
+  max-width: min(680px, calc(100vw - 48px));
+  width: 100%;
+  max-height: calc(100vh - 64px);
+}
+
+.modal::backdrop {
+  background: var(--scrim);
+}
+
+.modal__inner {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 64px);
+}
+
+.modal__header {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: 1px solid var(--border);
+}
+
+.modal__title {
+  font-size: var(--fs-lg);
+  font-weight: 600;
+}
+
+.modal__body {
+  padding: var(--sp-4);
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.modal__footer {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+  border-top: 1px solid var(--border);
+  background: var(--bg-subtle);
+}
+
+.modal--wide {
+  max-width: min(860px, calc(100vw - 48px));
+}
+
+/* -------------------------------------------------------------------- toasts */
+
+.toasts {
+  position: fixed;
+  right: var(--sp-4);
+  bottom: var(--sp-4);
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  width: min(380px, calc(100vw - 32px));
+  pointer-events: none;
+}
+
+.toast {
+  pointer-events: auto;
+  display: flex;
+  gap: var(--sp-2);
+  align-items: flex-start;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-strong);
+  border-left-width: 3px;
+  border-radius: var(--radius);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-2);
+}
+
+.toast--error {
+  border-left-color: var(--danger);
+}
+.toast--success {
+  border-left-color: var(--ok);
+}
+.toast--warning {
+  border-left-color: var(--warn-strong);
+}
+.toast--info {
+  border-left-color: var(--accent);
+}
+
+.toast__body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.toast__title {
+  font-weight: 600;
+}
+
+.toast__text {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+/* Tone is carried by an icon as well as the edge colour — colour alone is not
+   a signal a colour-blind or greyscale user can read. */
+.toast__icon {
+  flex: none;
+  margin-top: 2px;
+}
+
+.toast--error .toast__icon {
+  color: var(--danger);
+}
+.toast--success .toast__icon {
+  color: var(--ok);
+}
+.toast--warning .toast__icon {
+  color: var(--warn-strong);
+}
+.toast--info .toast__icon {
+  color: var(--accent);
+}
+
+/* Stack cap: the queue never grows past this, and the overflow says so. */
+.toasts__overflow {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-control-gap);
+  padding: var(--sp-1) var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-1);
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+/* ------------------------------------------------------------------ tooltip */
+
+.tip {
+  position: relative;
+  display: inline-flex;
+  vertical-align: middle;
+}
+
+.tip__trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  background: var(--bg-surface);
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  line-height: 1;
+  cursor: help;
+}
+
+.tip__trigger:hover,
+.tip__trigger[aria-describedby] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/*
+ * Anchored to the leading edge rather than centred: the window is narrow and a
+ * centred bubble on a left-hand control would be clipped by the pane. It sits
+ * above the trigger so it never covers the label it is explaining.
+ */
+.tip__bubble {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: -4px;
+  z-index: 80;
+  width: max-content;
+  max-width: min(280px, 60vw);
+  padding: 6px 9px;
+  border-radius: var(--radius);
+  background: var(--tooltip-bg);
+  color: var(--tooltip-fg);
+  box-shadow: var(--shadow-2);
+  font-size: var(--fs-sm);
+  font-weight: 400;
+  line-height: 1.45;
+  text-align: left;
+  white-space: normal;
+  pointer-events: none;
+}
+
+/* --------------------------------------------------------------------- table */
+
+.tbl {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-sm);
+}
+
+.tbl th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-muted);
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.tbl td {
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.tbl tr:last-child td {
+  border-bottom: none;
+}
+
+/* Utility used by scroll regions that must not push the page sideways. */
+.scroll-x {
+  overflow-x: auto;
+  overflow-y: hidden;
+  max-width: 100%;
+}

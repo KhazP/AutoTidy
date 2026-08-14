@@ -1,0 +1,10 @@
+# Dependencies of the LEGACY Python 1.5.0 engine, which is no longer shipped.
+#
+# It is retained as the behavioural reference that tools/parity/ diffs the Rust
+# engine against. Runtime dependencies for the shipping app are in Cargo.toml
+# and package.json.
+#
+# PyQt6 is only needed to run the old GUI; the parity harness drives utils.py
+# directly and needs Send2Trash alone.
+PyQt6>=6.5.0,<7.0.0
+Send2Trash>=1.8.0,<2.0.0

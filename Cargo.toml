@@ -1,0 +1,36 @@
+[workspace]
+resolver = "2"
+members = ["crates/autotidy-core", "crates/autotidy-cli", "src-tauri"]
+
+[workspace.package]
+version = "2.0.0"
+edition = "2021"
+rust-version = "1.80"
+license = "MPL-2.0"
+repository = "https://github.com/KhazP/AutoTidy"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+# preserve_order keeps unknown config keys in their original order on rewrite.
+serde_json = { version = "1", features = ["preserve_order"] }
+thiserror = "2"
+tracing = "0.1"
+tempfile = "3"
+globset = "0.4"
+regex = "1"
+# Parallel recursive directory walking. Chosen over jwalk for its filter_entry
+# hook, which is what lets the archive-loop guard prune a destination subtree
+# before it is descended into rather than filtering files after the fact.
+ignore = "0.4"
+# notify 9 is still a release candidate; 8.x is the stable line.
+notify = "8"
+notify-debouncer-full = "0.5"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+uuid = { version = "1", features = ["v4"] }
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

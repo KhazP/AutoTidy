@@ -1,0 +1,32 @@
+[package]
+name = "autotidy-core"
+description = "AutoTidy engine: config, rule matching, file actions, history, undo. No GUI dependencies."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tempfile.workspace = true
+globset.workspace = true
+regex.workspace = true
+ignore.workspace = true
+notify.workspace = true
+notify-debouncer-full.workspace = true
+chrono.workspace = true
+uuid.workspace = true
+trash = "5"
+
+# MoveFileExW without MOVEFILE_REPLACE_EXISTING is the only Windows primitive
+# that renames *and* fails atomically when the target exists. std::fs::rename
+# passes REPLACE_EXISTING, which would silently clobber a colliding file.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage_FileSystem"] }
+
+[dev-dependencies]
+tempfile.workspace = true

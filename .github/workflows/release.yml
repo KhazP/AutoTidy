@@ -1,0 +1,169 @@
+name: Release
+
+# Builds, signs and publishes a Windows release.
+#
+# ---------------------------------------------------------------------------
+# Why signing happens twice
+# ---------------------------------------------------------------------------
+# The NSIS installer *contains* AutoTidy.exe. Signing the installer after it has
+# been built would ship a signed installer wrapping an unsigned executable — so
+# the download would be trusted while the program the user actually runs every
+# day would not be. The order therefore has to be:
+#
+#   1. build the executable alone      (tauri build --no-bundle)
+#   2. sign it                          <- SignPath approval #1
+#   3. bundle the signed executable     (tauri bundle)
+#   4. sign the installer               <- SignPath approval #2
+#
+# That means TWO manual approvals in the SignPath dashboard per release. The
+# SignPath Foundation requires manual approval of every signing request, so this
+# cannot be automated away. If you would rather approve once, delete the
+# "Sign the executable" step — the installer will still be signed, but the
+# installed application will not be.
+#
+# ---------------------------------------------------------------------------
+# Setup required before this workflow will run
+# ---------------------------------------------------------------------------
+# Repository secrets (Settings -> Secrets and variables -> Actions):
+#   SIGNPATH_API_TOKEN   API token with submitter permission
+#   SIGNPATH_ORG_ID      Organization ID from the SignPath dashboard
+#
+# And fill in PROJECT_SLUG / SIGNING_POLICY_SLUG below — SignPath assigns these
+# when the project is approved.
+#
+# UNTESTED until those values exist. Everything up to "Sign the executable"
+# works today and can be verified by running the workflow with the signing
+# steps commented out.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build (e.g. v2.0.0)"
+        required: true
+
+permissions:
+  contents: write # create the release and upload assets
+  actions: read # SignPath verifies the originating workflow run
+
+env:
+  SIGNPATH_PROJECT_SLUG: autotidy
+  SIGNPATH_SIGNING_POLICY_SLUG: release-signing
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - run: npm ci
+
+      # Refuse to publish a release that fails its own checks. A signed broken
+      # build is worse than an unsigned one: the signature says someone vouched.
+      - name: Verify
+        run: |
+          npm run typecheck
+          cargo fmt --all --check
+          cargo clippy --workspace --all-targets -- -D warnings
+          cargo test
+
+      # The differential harnesses against the Python 1.5.0 engine. This is a
+      # file-moving program; parity is the release gate.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Parity vs the 1.5.0 engine
+        run: |
+          pip install Send2Trash
+          python tools/parity/run_parity.py
+          python tools/parity/wet_parity.py
+
+      # --- 1. Build the executable, without bundling it ---------------------
+      - name: Build (no bundle)
+        run: npm run tauri build -- --no-bundle
+
+      - name: Stage the unsigned executable
+        run: |
+          New-Item -ItemType Directory -Force unsigned | Out-Null
+          Copy-Item target/release/AutoTidy.exe unsigned/
+
+      - name: Upload the unsigned executable
+        id: unsigned-exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-exe
+          path: unsigned/
+
+      # --- 2. Sign it (approval #1) -----------------------------------------
+      - name: Sign the executable
+        uses: signpath/github-action-submit-signing-request@v2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ secrets.SIGNPATH_ORG_ID }}
+          project-slug: ${{ env.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ env.SIGNPATH_SIGNING_POLICY_SLUG }}
+          github-artifact-id: ${{ steps.unsigned-exe.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: signed-exe
+
+      # --- 3. Bundle the SIGNED executable ----------------------------------
+      - name: Put the signed executable back
+        run: Copy-Item signed-exe/AutoTidy.exe target/release/AutoTidy.exe -Force
+
+      - name: Bundle the installer
+        run: npm run tauri bundle
+
+      - name: Stage the unsigned installer
+        run: |
+          New-Item -ItemType Directory -Force unsigned-installer | Out-Null
+          Copy-Item target/release/bundle/nsis/*-setup.exe unsigned-installer/
+
+      - name: Upload the unsigned installer
+        id: unsigned-installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-installer
+          path: unsigned-installer/
+
+      # --- 4. Sign the installer (approval #2) ------------------------------
+      - name: Sign the installer
+        uses: signpath/github-action-submit-signing-request@v2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ secrets.SIGNPATH_ORG_ID }}
+          project-slug: ${{ env.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ env.SIGNPATH_SIGNING_POLICY_SLUG }}
+          github-artifact-id: ${{ steps.unsigned-installer.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: signed-installer
+
+      # --- 5. Publish -------------------------------------------------------
+      # The checksum is computed from the signed file the user will actually
+      # download; taking it any earlier would publish a hash that never matches.
+      - name: Checksums
+        run: |
+          Get-ChildItem signed-installer/*.exe | ForEach-Object {
+            $h = (Get-FileHash $_.FullName -Algorithm SHA256).Hash
+            "$h  $($_.Name)" | Out-File -Append -Encoding utf8 signed-installer/SHA256SUMS.txt
+            Write-Host "$h  $($_.Name)"
+          }
+
+      - name: Publish the release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          draft: true # reviewed by a human before it goes live
+          files: |
+            signed-installer/*.exe
+            signed-installer/SHA256SUMS.txt

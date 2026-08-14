@@ -1,0 +1,406 @@
+/* Undo: runs on the left, that run's actions on the right. */
+
+.undo {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* Stale-data warning: the list is still usable, so this sits above it rather
+   than replacing it. */
+.undo__banner {
+  flex: none;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-4);
+  border-bottom: 1px solid var(--warn-border);
+  background: var(--warn-bg);
+  color: var(--warn);
+  font-size: var(--fs-sm);
+}
+
+.undo__banner .btn {
+  color: var(--text);
+}
+
+.undo__runs {
+  flex: none;
+  width: 268px;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border);
+  background: var(--bg-surface);
+}
+
+@media (max-width: 1000px) {
+  .undo__runs {
+    width: 208px;
+  }
+}
+
+.undo__runs-head {
+  flex: none;
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid var(--border);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.undo__runs-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.runrow {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 8px var(--sp-3);
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-left: 3px solid transparent;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+
+.runrow:hover {
+  background: var(--bg-hover);
+}
+
+.runrow[aria-current="true"] {
+  background: var(--bg-selected);
+  color: var(--fg-selected);
+  border-left-color: var(--accent);
+}
+
+.runrow__time {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.runrow__meta {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.runrow[aria-current="true"] .runrow__meta {
+  color: inherit;
+  opacity: 0.85;
+}
+
+.undo__detail {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-app);
+}
+
+.undo__detail-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.undo__detail-head .section-title:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.undo__detail-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: var(--sp-3) var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+/* ------------------------------------------------------------------- filter */
+
+.undo__filter {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+  font-size: var(--fs-sm);
+}
+
+.undo__filter-label {
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.undo__filter-group {
+  display: inline-flex;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.undo__filter-btn {
+  border: 0;
+  border-left: 1px solid var(--border-strong);
+  background: var(--bg-surface);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-sm);
+  padding: 3px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.undo__filter-btn:first-child {
+  border-left: 0;
+}
+
+.undo__filter-btn:hover {
+  background: var(--bg-hover);
+}
+
+.undo__filter-btn[aria-pressed="true"] {
+  background: var(--bg-selected);
+  color: var(--fg-selected);
+  font-weight: 600;
+}
+
+.undo__filter-count {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* -------------------------------------------------------------------- table */
+
+.undo__actions-wrap {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-surface);
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.undo__actions {
+  width: 100%;
+  min-width: 720px;
+  border-collapse: collapse;
+  font-size: var(--fs-sm);
+}
+
+.undo__actions th {
+  position: sticky;
+  top: 0;
+  background: var(--bg-subtle);
+  text-align: left;
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border-strong);
+  white-space: nowrap;
+}
+
+.undo__actions td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.undo__actions tbody tr:nth-child(even) {
+  background: var(--bg-subtle);
+}
+
+.undo__actions tbody tr:hover {
+  background: var(--bg-hover);
+}
+
+.undo__actions tr:last-child td {
+  border-bottom: 0;
+}
+
+.undo__actions tr.is-blocked td {
+  color: var(--text-faint);
+}
+
+.undo__path {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  word-break: break-all;
+  max-width: 340px;
+}
+
+.undo__reason {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+/* ----------------------------------------------- full-panel empty / error --
+
+   These deliberately do not share markup with the small inline `EmptyState`:
+   "nothing has happened yet" and "we could not read it" have to look and read
+   differently, or a load failure gets mistaken for lost data.
+*/
+
+.undo__state {
+  max-width: 520px;
+  margin: var(--sp-5) auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: var(--sp-2);
+  padding: var(--sp-5) var(--sp-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-surface);
+}
+
+.undo__state--error {
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+}
+
+.undo__state-icon {
+  color: var(--text-faint);
+  display: inline-flex;
+}
+
+.undo__state-icon--error {
+  color: var(--danger);
+}
+
+.undo__state-title {
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.undo__state-body {
+  font-size: var(--fs-base);
+  color: var(--text-muted);
+  max-width: 46ch;
+}
+
+.undo__state-detail {
+  align-self: stretch;
+  margin: 0;
+  padding: var(--sp-2);
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius);
+  background: var(--bg-surface);
+  color: var(--danger);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  text-align: left;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 140px;
+  overflow: auto;
+}
+
+.undo__state-actions {
+  justify-content: center;
+  margin-top: var(--sp-1);
+}
+
+/* --text-faint would land at 4.44:1 on --bg-surface in dark mode. */
+.undo__state-foot {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  max-width: 46ch;
+}
+
+/* ------------------------------------------------- confirmation dialog body --
+
+   The body is rendered inside a red `notice`, which tints everything it holds.
+   Blast-radius numbers have to stay readable, so text colour is reclaimed here.
+*/
+
+.undo__confirm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  color: var(--text);
+  min-width: 0;
+}
+
+.undo__confirm-lead {
+  font-weight: 600;
+}
+
+.undo__kv {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  gap: 6px var(--sp-3);
+  margin: 0;
+  font-size: var(--fs-sm);
+}
+
+.undo__kv dt {
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.undo__kv dd {
+  margin: 0;
+  min-width: 0;
+  word-break: break-word;
+}
+
+.undo__kv dd.mono {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  word-break: break-all;
+}
+
+.undo__confirm-list {
+  margin: 4px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--text-muted);
+}
+
+.undo__confirm-list li::before {
+  content: "— ";
+}
+
+.undo__confirm-foot {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  border-top: 1px dashed var(--border);
+  padding-top: var(--sp-2);
+}
+
+@media (max-width: 560px) {
+  .undo__kv {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+  .undo__kv dd {
+    margin-bottom: 6px;
+  }
+}
