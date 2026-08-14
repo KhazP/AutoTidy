@@ -8,6 +8,8 @@ and it keeps them tidy in the background.
 
 <br clear="left"/>
 
+**[autotidy.alpyalay.org](https://autotidy.alpyalay.org)**
+
 [![Version](https://img.shields.io/badge/version-2.0.0-1f6feb?style=flat-square)](Cargo.toml)
 [![Rust](https://img.shields.io/badge/Rust-2021-b7410e?style=flat-square&logo=rust&logoColor=white)](crates/)
 [![Tauri](https://img.shields.io/badge/Tauri-2-24c8db?style=flat-square&logo=tauri&logoColor=white)](src-tauri/)
@@ -64,11 +66,8 @@ Everything it does is written to a log you can browse, filter and **undo**.
 
 ## Install
 
-Download the latest installer from
-[Releases](https://github.com/KhazP/AutoTidy/releases) and run it.
-
-> **2.0.0 is not released yet.** The version on the Releases page is still
-> 1.5.0 (Python). Build 2.0 [from source](#build-from-source) in the meantime.
+Download from **[autotidy.alpyalay.org](https://autotidy.alpyalay.org)** or
+straight from [Releases](https://github.com/KhazP/AutoTidy/releases), and run it.
 
 Windows 10 or 11. The installer is per-user — no administrator rights needed.
 WebView2 is already present on Windows 11 and current Windows 10; if it's
