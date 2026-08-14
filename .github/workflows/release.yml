@@ -51,6 +51,12 @@ permissions:
 env:
   SIGNPATH_PROJECT_SLUG: autotidy
   SIGNPATH_SIGNING_POLICY_SLUG: release-signing
+  # Signing is opt-in on the secrets being present. The SignPath Foundation
+  # application is still pending, and a workflow that cannot cut a release until
+  # a third party approves an application is a workflow that cannot cut a
+  # release. Unsigned builds go out with the signing steps skipped, and start
+  # being signed the moment the secrets exist — no edit required.
+  SIGNING_ENABLED: ${{ secrets.SIGNPATH_API_TOKEN != '' && secrets.SIGNPATH_ORG_ID != '' }}
 
 jobs:
   release:
@@ -100,6 +106,7 @@ jobs:
 
       - name: Upload the unsigned executable
         id: unsigned-exe
+        if: env.SIGNING_ENABLED == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: unsigned-exe
@@ -107,6 +114,7 @@ jobs:
 
       # --- 2. Sign it (approval #1) -----------------------------------------
       - name: Sign the executable
+        if: env.SIGNING_ENABLED == 'true'
         uses: signpath/github-action-submit-signing-request@v2
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
@@ -117,8 +125,9 @@ jobs:
           wait-for-completion: true
           output-artifact-directory: signed-exe
 
-      # --- 3. Bundle the SIGNED executable ----------------------------------
+      # --- 3. Bundle the (signed, when signing ran) executable --------------
       - name: Put the signed executable back
+        if: env.SIGNING_ENABLED == 'true'
         run: Copy-Item signed-exe/AutoTidy.exe target/release/AutoTidy.exe -Force
 
       - name: Bundle the installer
@@ -131,6 +140,7 @@ jobs:
 
       - name: Upload the unsigned installer
         id: unsigned-installer
+        if: env.SIGNING_ENABLED == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: unsigned-installer
@@ -138,6 +148,7 @@ jobs:
 
       # --- 4. Sign the installer (approval #2) ------------------------------
       - name: Sign the installer
+        if: env.SIGNING_ENABLED == 'true'
         uses: signpath/github-action-submit-signing-request@v2
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
@@ -149,13 +160,29 @@ jobs:
           output-artifact-directory: signed-installer
 
       # --- 5. Publish -------------------------------------------------------
-      # The checksum is computed from the signed file the user will actually
-      # download; taking it any earlier would publish a hash that never matches.
+      # Collect whatever the run actually produced into one directory, so the
+      # publish step below is identical whether or not signing happened.
+      - name: Collect the release files
+        run: |
+          New-Item -ItemType Directory -Force release | Out-Null
+          if ("${{ env.SIGNING_ENABLED }}" -eq "true") {
+            Copy-Item signed-installer/*.exe release/
+            Copy-Item signed-exe/AutoTidy.exe release/
+          } else {
+            Write-Host "::warning::SignPath secrets are not configured - publishing UNSIGNED binaries."
+            Copy-Item unsigned-installer/*.exe release/
+            Copy-Item target/release/AutoTidy.exe release/
+          }
+          Get-ChildItem release | Select-Object Name, Length
+
+      # Checksums come from the exact files being attached to the release. Taken
+      # any earlier — before signing, say — they would never match what a user
+      # actually downloads.
       - name: Checksums
         run: |
-          Get-ChildItem signed-installer/*.exe | ForEach-Object {
+          Get-ChildItem release/*.exe | ForEach-Object {
             $h = (Get-FileHash $_.FullName -Algorithm SHA256).Hash
-            "$h  $($_.Name)" | Out-File -Append -Encoding utf8 signed-installer/SHA256SUMS.txt
+            "$h  $($_.Name)" | Out-File -Append -Encoding utf8 release/SHA256SUMS.txt
             Write-Host "$h  $($_.Name)"
           }
 
@@ -165,5 +192,5 @@ jobs:
           tag_name: ${{ github.event.inputs.tag || github.ref_name }}
           draft: true # reviewed by a human before it goes live
           files: |
-            signed-installer/*.exe
-            signed-installer/SHA256SUMS.txt
+            release/*.exe
+            release/SHA256SUMS.txt
