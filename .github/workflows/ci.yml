@@ -1,0 +1,131 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  engine:
+    name: Engine (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Both platforms on purpose. Glob matching is deliberately
+        # case-insensitive on Windows and case-sensitive elsewhere, mirroring
+        # Python's fnmatch — testing only the shipping target would let a
+        # regression in either direction through.
+        os: [windows-latest, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Format
+        run: cargo fmt --all --check
+
+      # Engine crates only. The Tauri crate needs GTK/WebKit system libraries
+      # that this Linux runner does not have, and the app ships for Windows —
+      # so it is linted in the `app` job instead, not skipped.
+      - name: Clippy
+        run: cargo clippy -p autotidy-core -p autotidy-cli --all-targets
+
+      - name: Test
+        run: cargo test -p autotidy-core -p autotidy-cli
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Build
+        run: npm run build
+
+  parity:
+    name: Parity vs the 1.5.0 engine
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # The retired 1.5.0 engine is the reference implementation under test, so
+      # its runtime dependency is needed. PyQt6 is not: the harness imports
+      # utils.py and constants.py directly and never constructs a UI.
+      - name: Install the reference engine's dependencies
+        run: pip install Send2Trash
+
+      # The legacy suite's own 76 tests are deliberately NOT run here. They
+      # cover retired 1.5.0 modules — the PyQt dialogs, config_manager,
+      # startup_manager — that nothing imports and that will never ship again.
+      # One of them also asserts on a path shape that breaks on runners whose
+      # username exceeds 8 characters (it compares `C:\Users\RUNNER~1\...`
+      # against the long form), so it fails for reasons that say nothing about
+      # this project.
+      #
+      # The part of the reference engine that matters is utils.py and
+      # constants.py, which the two harnesses below import directly and
+      # exercise across 23 rule variants. If those break, parity breaks.
+      # Run the legacy suite locally with `cd legacy && pytest -q`.
+      - name: Decisions (dry run, 12 rule variants)
+        run: python tools/parity/run_parity.py
+
+      # Reaches the commit path — real renames and collision claiming — which
+      # lives inside `if not dry_run:` and a dry run structurally cannot touch.
+      - name: Resulting files (wet run, 11 rule variants)
+        run: python tools/parity/wet_parity.py
+
+  app:
+    name: Tauri app
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - run: npm ci
+      - run: npm run build
+
+      # Clippy lints are emitted by clippy, not rustc, so `-D warnings` on the
+      # build step below does not cover them. Without this the shell crate is
+      # never linted at all — which is how a `byte_char_slices` lint sat
+      # unnoticed in src-tauri/src/lib.rs.
+      - name: Clippy
+        run: cargo clippy -p autotidy-app --all-targets
+
+      - name: Test the shell
+        run: cargo test -p autotidy-app
+      - name: Build
+        run: cargo build -p autotidy-app --release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: autotidy-windows
+          path: target/release/AutoTidy.exe
+          if-no-files-found: error

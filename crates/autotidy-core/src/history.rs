@@ -19,6 +19,21 @@ pub const MAX_HISTORY_SIZE_BYTES: u64 = 10 * 1024 * 1024;
 pub const MAX_HISTORY_BACKUPS: u32 = 3;
 pub const DEFAULT_MAX_AGE_DAYS: i64 = 90;
 
+/// Records always kept, newest first, however old they are.
+///
+/// Without a floor, pruning by age alone erases *everything* for anyone who
+/// comes back to AutoTidy after a break longer than the retention window — and
+/// it happens on launch, before they have asked for anything. This file is the
+/// only thing that makes undo possible, so the one case where age-based
+/// deletion is most tempting is exactly the case where it is least excusable.
+///
+/// Observed for real: a 776-record file, every entry 9+ months old, reduced to
+/// zero bytes by a single startup.
+pub const MIN_RETAINED_RECORDS: usize = 500;
+
+/// Suffix for the copy taken before a prune discards anything.
+pub const PRUNE_BACKUP_SUFFIX: &str = ".pruned.bak";
+
 #[derive(Debug, thiserror::Error)]
 pub enum HistoryError {
     #[error("i/o error on {path}: {source}")]
@@ -113,6 +128,17 @@ impl HistoryRecord {
         }
         self
     }
+}
+
+/// What a prune did, so the caller can tell the user rather than doing it
+/// silently. `removed == 0` means the file was left completely untouched.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PruneOutcome {
+    pub removed: usize,
+    pub kept: usize,
+    /// Where the pre-prune copy was written. `None` when nothing was removed.
+    pub backup: Option<PathBuf>,
 }
 
 /// The history file plus its rotation policy.
@@ -216,10 +242,12 @@ impl HistoryLog {
     /// The rewrite goes through a sibling temp file and a rename. 1.5.0
     /// truncated the live file and wrote the survivors back into it, so a crash
     /// mid-write left the user with a half-empty history and no way back.
-    pub fn prune(&self, max_age_days: i64) -> Result<(), HistoryError> {
+    pub fn prune(&self, max_age_days: i64) -> Result<PruneOutcome, HistoryError> {
         let raw = match fs::read(&self.path) {
             Ok(raw) => raw,
-            Err(source) if source.kind() == ErrorKind::NotFound => return Ok(()),
+            Err(source) if source.kind() == ErrorKind::NotFound => {
+                return Ok(PruneOutcome::default())
+            }
             Err(source) => return Err(self.io_err(source)),
         };
 
@@ -231,20 +259,40 @@ impl HistoryLog {
                 max_age_days,
                 "ignoring out-of-range history retention window"
             );
-            return Ok(());
+            return Ok(PruneOutcome::default());
         };
 
         // Operating on raw bytes keeps lines we can't even decode intact.
-        let mut kept: Vec<&[u8]> = Vec::new();
-        for line in raw.split(|byte| *byte == b'\n') {
-            let line = trim_ascii_whitespace(line);
-            if line.is_empty() {
-                continue;
-            }
-            if keep_after_prune(line, cutoff) {
-                kept.push(line);
-            }
+        let lines: Vec<&[u8]> = raw
+            .split(|byte| *byte == b'\n')
+            .map(trim_ascii_whitespace)
+            .filter(|line| !line.is_empty())
+            .collect();
+        let total = lines.len();
+
+        // Records are appended, so the newest are at the end. Anything in the
+        // last MIN_RETAINED_RECORDS survives regardless of age.
+        let floor = total.saturating_sub(MIN_RETAINED_RECORDS);
+        let kept: Vec<&[u8]> = lines
+            .iter()
+            .enumerate()
+            .filter(|(index, line)| *index >= floor || keep_after_prune(line, cutoff))
+            .map(|(_, line)| *line)
+            .collect();
+
+        let removed = total - kept.len();
+        if removed == 0 {
+            // Nothing to do. Not rewriting also means not risking the file.
+            return Ok(PruneOutcome {
+                removed: 0,
+                kept: kept.len(),
+                backup: None,
+            });
         }
+
+        // Copy the file before discarding anything from it. Undo depends
+        // entirely on this data and the user never asked for it to be deleted.
+        let backup = self.backup_before_prune(&raw)?;
 
         let dir = match self.path.parent() {
             Some(parent) if !parent.as_os_str().is_empty() => parent,
@@ -267,7 +315,53 @@ impl HistoryLog {
             .map_err(|source| self.io_err(source))?;
         tmp.persist(&self.path)
             .map_err(|err| self.io_err(err.error))?;
-        Ok(())
+
+        tracing::info!(
+            removed,
+            kept = total - removed,
+            backup = ?backup,
+            "pruned history older than {max_age_days} days"
+        );
+        Ok(PruneOutcome {
+            removed,
+            kept: total - removed,
+            backup: Some(backup),
+        })
+    }
+
+    /// Where the pre-prune copy lives.
+    pub fn prune_backup_path(&self) -> PathBuf {
+        let mut name = self.path.as_os_str().to_os_string();
+        name.push(PRUNE_BACKUP_SUFFIX);
+        PathBuf::from(name)
+    }
+
+    /// Write the pre-prune copy, atomically so an interrupted backup cannot
+    /// leave a truncated one standing in for the real thing.
+    ///
+    /// Overwriting the previous backup is intentional: prune runs at every
+    /// launch, and after the first one it removes nothing and takes no backup
+    /// at all, so the copy that survives is the one from the last launch that
+    /// actually discarded something.
+    fn backup_before_prune(&self, raw: &[u8]) -> Result<PathBuf, HistoryError> {
+        let target = self.prune_backup_path();
+        let dir = match self.path.parent() {
+            Some(parent) if !parent.as_os_str().is_empty() => parent,
+            _ => Path::new("."),
+        };
+        let mut tmp = tempfile::NamedTempFile::new_in(dir).map_err(|source| HistoryError::Io {
+            path: dir.to_path_buf(),
+            source,
+        })?;
+        tmp.write_all(raw).map_err(|source| self.io_err(source))?;
+        tmp.as_file()
+            .sync_all()
+            .map_err(|source| self.io_err(source))?;
+        tmp.persist(&target).map_err(|err| HistoryError::Io {
+            path: target.clone(),
+            source: err.error,
+        })?;
+        Ok(target)
     }
 
     /// `.3` is discarded, `.2`→`.3`, `.1`→`.2`, current→`.1`.
@@ -531,7 +625,7 @@ mod tests {
         log.append(&record("C:\\fresh.txt", &days_ago(3))).unwrap();
         log.append(&record("C:\\now.txt", &days_ago(0))).unwrap();
 
-        log.prune(DEFAULT_MAX_AGE_DAYS).unwrap();
+        let outcome = log.prune(DEFAULT_MAX_AGE_DAYS).unwrap();
 
         let kept: Vec<String> = log
             .read_all()
@@ -539,30 +633,146 @@ mod tests {
             .into_iter()
             .map(|r| r.original_path)
             .collect();
-        assert_eq!(kept, vec!["C:\\fresh.txt", "C:\\now.txt"]);
+        // Four records is far below MIN_RETAINED_RECORDS, so the floor keeps
+        // everything and nothing is discarded on age alone.
+        assert_eq!(
+            kept,
+            vec![
+                "C:\\ancient.txt",
+                "C:\\old.txt",
+                "C:\\fresh.txt",
+                "C:\\now.txt"
+            ]
+        );
+        assert_eq!(outcome.removed, 0);
+        assert!(
+            outcome.backup.is_none(),
+            "nothing removed, nothing to back up"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Data-loss guards.
+    //
+    // These exist because it actually happened: a real 776-record file, every
+    // entry over nine months old, was reduced to zero bytes by one launch —
+    // before the user had asked the application to do anything, and with no
+    // copy kept. That file is the only thing that makes undo possible.
+    // -----------------------------------------------------------------------
+
+    /// The exact shape of the incident: everything older than the window.
+    #[test]
+    fn a_history_where_every_record_is_old_is_not_wiped() {
+        let dir = tempfile::tempdir().unwrap();
+        let log = log_in(&dir);
+        for i in 0..40 {
+            log.append(&record(&format!("C:\\old_{i}.txt"), &days_ago(300)))
+                .unwrap();
+        }
+
+        let outcome = log.prune(DEFAULT_MAX_AGE_DAYS).unwrap();
+
+        assert_eq!(outcome.removed, 0, "the floor must protect every record");
+        assert_eq!(log.read_all().unwrap().len(), 40);
+        assert!(
+            log.path().metadata().unwrap().len() > 0,
+            "the file must never be emptied by a prune"
+        );
+    }
+
+    #[test]
+    fn the_newest_records_survive_however_old_they_are() {
+        let dir = tempfile::tempdir().unwrap();
+        let log = log_in(&dir);
+        // Comfortably past the floor so age-based pruning genuinely engages.
+        let total = MIN_RETAINED_RECORDS + 120;
+        for i in 0..total {
+            log.append(&record(&format!("C:\\r_{i:04}.txt"), &days_ago(400)))
+                .unwrap();
+        }
+
+        let outcome = log.prune(DEFAULT_MAX_AGE_DAYS).unwrap();
+
+        assert_eq!(outcome.removed, 120);
+        assert_eq!(outcome.kept, MIN_RETAINED_RECORDS);
+
+        let kept = log.read_all().unwrap();
+        assert_eq!(kept.len(), MIN_RETAINED_RECORDS);
+        // The survivors are the tail, i.e. the most recent ones.
+        assert_eq!(kept.first().unwrap().original_path, "C:\\r_0120.txt");
+        assert_eq!(
+            kept.last().unwrap().original_path,
+            format!("C:\\r_{:04}.txt", total - 1)
+        );
+    }
+
+    #[test]
+    fn a_prune_that_discards_anything_leaves_a_complete_backup() {
+        let dir = tempfile::tempdir().unwrap();
+        let log = log_in(&dir);
+        let total = MIN_RETAINED_RECORDS + 30;
+        for i in 0..total {
+            log.append(&record(&format!("C:\\r_{i:04}.txt"), &days_ago(400)))
+                .unwrap();
+        }
+
+        let outcome = log.prune(DEFAULT_MAX_AGE_DAYS).unwrap();
+        let backup = outcome.backup.expect("a backup must be written");
+
+        assert!(backup.is_file());
+        // The backup is the file as it was: every record, none missing.
+        let backed_up = HistoryLog::new(&backup).read_all().unwrap();
+        assert_eq!(backed_up.len(), total);
+        assert_eq!(backed_up.first().unwrap().original_path, "C:\\r_0000.txt");
+    }
+
+    #[test]
+    fn pruning_nothing_does_not_touch_the_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let log = log_in(&dir);
+        log.append(&record("C:\\fresh.txt", &days_ago(1))).unwrap();
+        let before = std::fs::read(log.path()).unwrap();
+
+        let outcome = log.prune(DEFAULT_MAX_AGE_DAYS).unwrap();
+
+        assert_eq!(outcome.removed, 0);
+        assert_eq!(std::fs::read(log.path()).unwrap(), before);
+        assert!(!log.prune_backup_path().exists());
     }
 
     #[test]
     fn prune_keeps_unparseable_lines() {
         let dir = tempfile::tempdir().unwrap();
         let log = log_in(&dir);
-        let old = serde_json::to_string(&record("C:\\old.txt", &days_ago(200))).unwrap();
-        let fresh = serde_json::to_string(&record("C:\\fresh.txt", &days_ago(1))).unwrap();
-        fs::write(
-            log.path(),
-            format!("{old}\n{{ truncated json\nnot json at all\n{fresh}\n"),
-        )
-        .unwrap();
 
-        log.prune(DEFAULT_MAX_AGE_DAYS).unwrap();
+        // The corrupt lines sit at the very front, inside the region age-based
+        // pruning would otherwise clear, so surviving is a real result rather
+        // than an accident of the retention floor. Enough records follow to
+        // push past the floor and make the prune actually discard something.
+        let mut body = String::from("{ truncated json\nnot json at all\n");
+        for i in 0..(MIN_RETAINED_RECORDS + 20) {
+            let line = serde_json::to_string(&record(&format!("C:\\r_{i:04}.txt"), &days_ago(200)))
+                .unwrap();
+            body.push_str(&line);
+            body.push('\n');
+        }
+        fs::write(log.path(), &body).unwrap();
+
+        let outcome = log.prune(DEFAULT_MAX_AGE_DAYS).unwrap();
+        assert!(outcome.removed > 0, "the prune must have discarded records");
 
         let raw = fs::read_to_string(log.path()).unwrap();
         let lines: Vec<&str> = raw.lines().collect();
-        assert_eq!(lines.len(), 3, "{raw}");
+        // A line we cannot even decode might be the only trace of something we
+        // moved, so it is never the thing we throw away.
         assert_eq!(lines[0], "{ truncated json");
         assert_eq!(lines[1], "not json at all");
-        assert!(lines[2].contains("C:\\\\fresh.txt"));
-        assert!(!raw.contains("old.txt"));
+        // ...and the oldest *parseable* records beyond the floor did go.
+        assert!(
+            !raw.contains("r_0000.txt"),
+            "oldest record should be pruned"
+        );
+        assert!(raw.contains(&format!("r_{:04}.txt", MIN_RETAINED_RECORDS + 19)));
     }
 
     #[test]

@@ -188,9 +188,16 @@ driven by the app, by the CLI, and by the test harness.
 ## Verification
 
 ```bash
-cargo test                          # 246 tests
+cargo test                          # 251 tests — the actual suite
 python tools/parity/run_parity.py   # decisions, 12 rule variants
 python tools/parity/wet_parity.py   # resulting files, 11 rule variants
+```
+
+The reference engine has its own 76 tests, which exist to guard the thing the
+parity harnesses measure against rather than to test shipping code:
+
+```bash
+cd legacy && pytest -q
 ```
 
 Rewriting a program that **deletes people's files** is not something to do on

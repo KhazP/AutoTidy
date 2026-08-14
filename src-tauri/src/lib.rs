@@ -614,10 +614,25 @@ fn backup_path(path: &Path, index: u32) -> PathBuf {
 }
 
 /// Drop history older than 90 days, as `main.py` did on every launch.
+/// Trim history older than the retention window, at launch.
+///
+/// Deliberately noisy when it discards anything. This runs before the user has
+/// asked the application to do a single thing, and the file it edits is the
+/// only reason undo works — so "quietly deleted your records" is not an
+/// acceptable outcome. The engine keeps a floor of recent records and writes a
+/// backup first; this just makes sure the fact reaches the log.
 fn prune_history(store: &ConfigStore) {
     let log = HistoryLog::new(store.history_path());
-    if let Err(err) = log.prune(DEFAULT_MAX_AGE_DAYS) {
-        tracing::warn!(%err, "history pruning failed");
+    match log.prune(DEFAULT_MAX_AGE_DAYS) {
+        Ok(outcome) if outcome.removed > 0 => tracing::warn!(
+            removed = outcome.removed,
+            kept = outcome.kept,
+            backup = ?outcome.backup,
+            retention_days = DEFAULT_MAX_AGE_DAYS,
+            "trimmed old history records; a copy of the previous file was kept"
+        ),
+        Ok(_) => {}
+        Err(err) => tracing::warn!(%err, "history pruning failed"),
     }
 }
 
@@ -917,7 +932,7 @@ mod tests {
         }
 
         // Newest backup first: .1 holds the most recent generation.
-        for (index, generation) in (1..=LOG_BACKUPS).zip([b'd', b'c', b'b']) {
+        for (index, &generation) in (1..=LOG_BACKUPS).zip(b"dcb") {
             let backup = backup_path(&log, index);
             assert!(backup.exists(), "{} should exist", backup.display());
             assert_eq!(std::fs::read(&backup).unwrap()[0], generation);
