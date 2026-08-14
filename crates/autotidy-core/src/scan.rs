@@ -348,8 +348,32 @@ mod tests {
     use super::*;
     use crate::config::Action;
 
+    /// The monitored folder, spelled absolutely for the host platform.
+    ///
+    /// These fixtures must not hardcode `C:/…`. A drive-letter path is absolute
+    /// on Windows but on Unix it is a *relative* directory literally named
+    /// `C:`, so `guard_paths` would join it under the monitored folder and the
+    /// assertions would silently test the opposite of what they claim.
+    fn monitored() -> PathBuf {
+        if cfg!(windows) {
+            PathBuf::from(r"C:\monitored")
+        } else {
+            PathBuf::from("/monitored")
+        }
+    }
+
+    /// An absolute path that is genuinely *outside* [`monitored`], on a
+    /// separate root where the platform has one.
+    fn elsewhere() -> PathBuf {
+        if cfg!(windows) {
+            PathBuf::from(r"D:\elsewhere")
+        } else {
+            PathBuf::from("/elsewhere")
+        }
+    }
+
     fn rule_with(template_action: Action) -> Rule {
-        let mut r = Rule::new("C:/monitored");
+        let mut r = Rule::new(monitored().to_string_lossy().into_owned());
         r.action = template_action;
         r
     }
@@ -357,10 +381,9 @@ mod tests {
     #[test]
     fn guard_prunes_the_static_prefix_of_a_dated_template() {
         let rule = rule_with(Action::Move);
-        let monitored = Path::new("C:/monitored");
-        let guards = guard_paths(&rule, "_Cleanup/{YYYY}-{MM}-{DD}", monitored);
+        let guards = guard_paths(&rule, "_Cleanup/{YYYY}-{MM}-{DD}", &monitored());
         assert!(
-            guards.contains(&normalize(Path::new("C:/monitored/_Cleanup"))),
+            guards.contains(&normalize(&monitored().join("_Cleanup"))),
             "expected the _Cleanup prefix to be pruned, got {guards:?}"
         );
     }
@@ -368,21 +391,22 @@ mod tests {
     #[test]
     fn guard_covers_a_fully_static_template() {
         let rule = rule_with(Action::Move);
-        let guards = guard_paths(&rule, "Archive/Old", Path::new("C:/monitored"));
-        assert!(guards.contains(&normalize(Path::new("C:/monitored/Archive"))));
+        let guards = guard_paths(&rule, "Archive/Old", &monitored());
+        assert!(guards.contains(&normalize(&monitored().join("Archive"))));
     }
 
     #[test]
     fn destination_outside_the_tree_needs_no_guard() {
         let rule = rule_with(Action::Move);
-        let guards = guard_paths(&rule, "D:/elsewhere/{YYYY}", Path::new("C:/monitored"));
+        let template = format!("{}/{{YYYY}}", elsewhere().display());
+        let guards = guard_paths(&rule, &template, &monitored());
         assert!(guards.is_empty(), "got {guards:?}");
     }
 
     #[test]
     fn delete_actions_have_no_destination_to_guard() {
         let rule = rule_with(Action::DeleteToTrash);
-        let guards = guard_paths(&rule, "_Cleanup/{YYYY}", Path::new("C:/monitored"));
+        let guards = guard_paths(&rule, "_Cleanup/{YYYY}", &monitored());
         assert!(guards.is_empty());
     }
 
@@ -391,7 +415,7 @@ mod tests {
         // "{YYYY}" has no static prefix at all — pruning "" would prune the
         // whole tree, so it must yield nothing.
         let rule = rule_with(Action::Move);
-        let guards = guard_paths(&rule, "{YYYY}/{MM}", Path::new("C:/monitored"));
+        let guards = guard_paths(&rule, "{YYYY}/{MM}", &monitored());
         assert!(guards.is_empty(), "got {guards:?}");
     }
 
