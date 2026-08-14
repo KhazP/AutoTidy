@@ -173,6 +173,8 @@ export interface StaleContextMenu {
 }
 
 export interface RuleTemplate {
+  /** Groups the templates dialog into sections. Absent on a 1.5.0-era payload. */
+  category?: string;
   name: string;
   description: string;
   rules: Array<Partial<Rule> & { folder_to_watch?: string; file_pattern?: string }>;

@@ -33,6 +33,7 @@ import "./RulesView.css";
  *   legend  Match criteria / Action / Exclusions for this folder
  *   h2    Rule templates | Global exclusions   (dialog titles, via <Modal>)
  *   h3      Excluded folders / Matching files  (sections inside a dialog)
+ *   h3      Downloads / Free up space …        (one per template category)
  */
 
 export function RulesView() {
@@ -655,6 +656,8 @@ function TemplatesModal({ open, onClose, onApply }: TemplatesModalProps) {
     if (open && templates === null && !busy && error === null) void load();
   }, [open, templates, busy, error, load]);
 
+  const groups = useMemo(() => groupByCategory(templates), [templates]);
+
   return (
     <Modal
       open={open}
@@ -671,8 +674,8 @@ function TemplatesModal({ open, onClose, onApply }: TemplatesModalProps) {
       }
     >
       <p className="muted">
-        A template adds one or more folders with a rule already filled in. You can edit anything
-        afterwards — nothing here is locked.
+        A template adds one or more folders with a rule already filled in. Everything a template
+        writes is editable afterwards, and you can preview what a rule matches before it runs.
       </p>
 
       {busy && <p className="muted">Loading templates…</p>}
@@ -687,9 +690,10 @@ function TemplatesModal({ open, onClose, onApply }: TemplatesModalProps) {
         />
       )}
 
-      {templates && templates.length > 0 && (
-        <div className="stack stack--tight">
-          {templates.map((template) => (
+      {groups.map(([category, entries]) => (
+        <section key={category} className="stack stack--tight template-group">
+          <h3 className="template-group__title">{category}</h3>
+          {entries.map((template) => (
             <button
               key={template.name}
               type="button"
@@ -700,14 +704,45 @@ function TemplatesModal({ open, onClose, onApply }: TemplatesModalProps) {
               <span className="template-card__body">
                 <span className="template-card__name">{template.name}</span>
                 <span className="template-card__desc">{template.description}</span>
-                <span className="template-card__desc">
-                  {template.rules.length} rule{template.rules.length === 1 ? "" : "s"}
-                </span>
+                <span className="template-card__desc">{templateSummary(template)}</span>
               </span>
             </button>
           ))}
-        </div>
-      )}
+        </section>
+      ))}
     </Modal>
   );
+}
+
+/**
+ * Group for display, preserving the order the engine sent.
+ *
+ * A `Map` keyed by category does that on its own — first appearance fixes the
+ * group's position — and the engine keeps each category's templates adjacent,
+ * so the order inside a group is its order too. Templates with no category
+ * (a 1.5.0-era payload) collect under one neutral heading rather than vanishing.
+ */
+function groupByCategory(templates: RuleTemplate[] | null): Array<[string, RuleTemplate[]]> {
+  const groups = new Map<string, RuleTemplate[]>();
+  for (const template of templates ?? []) {
+    const key = template.category?.trim() || "Templates";
+    const existing = groups.get(key);
+    if (existing) existing.push(template);
+    else groups.set(key, [template]);
+  }
+  return [...groups];
+}
+
+/**
+ * The one line that says what applying this would actually do. "3 rules" told
+ * the user nothing they could act on; the action and the folder count are what
+ * separates "files move into a subfolder" from "files are deleted".
+ */
+function templateSummary(template: RuleTemplate): string {
+  const rules = templateRules(template);
+  if (rules.length === 0) return "No usable rules";
+
+  const actions = [...new Set(rules.map((r) => ACTION_LABELS[r.action]))];
+  const folders = `${rules.length} folder${rules.length === 1 ? "" : "s"}`;
+  return `${actions.join(" · ")} · ${folders}`;
 }

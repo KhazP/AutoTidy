@@ -177,6 +177,37 @@ pub fn context_menu_registered() -> bool {
     }
 }
 
+/// Where Explorer actually keeps one of the user's well-known folders.
+///
+/// `%USERPROFILE%\Documents` is the wrong guess on a large share of Windows
+/// machines. OneDrive's "back up your folders" moves Desktop, Documents and
+/// Pictures under `%USERPROFILE%\OneDrive\`, and Explorer stops showing the
+/// original — so a rule template pointing at the unredirected path would
+/// monitor a folder the user never opens and never appears to do anything.
+/// Explorer records the redirection in `User Shell Folders`, so that is what
+/// gets read.
+///
+/// `User Shell Folders` rather than its `Shell Folders` sibling: the former is
+/// the one the shell treats as authoritative, the latter is a cache written for
+/// legacy callers. Values are `REG_EXPAND_SZ` (`%USERPROFILE%\Documents`), so
+/// the result is passed through the same environment expansion destination
+/// templates use.
+///
+/// `None` when the value is missing, empty, or still contains an unexpanded
+/// `%VAR%` — every caller has a home-relative fallback, and a literal `%FOO%`
+/// in a path is worse than the guess.
+pub fn user_shell_folder(value_name: &str) -> Option<PathBuf> {
+    #[cfg(windows)]
+    {
+        win::user_shell_folder(value_name)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = value_name;
+        None
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Registry
 // ---------------------------------------------------------------------------
@@ -195,6 +226,27 @@ mod win {
     /// `ERROR_ACCESS_DENIED` (5), as the `HRESULT` the registry crate wraps it
     /// in. This is the one failure the UI has to word differently.
     pub(super) const HRESULT_ACCESS_DENIED: i32 = 0x8007_0005_u32 as i32;
+
+    /// Explorer's per-user record of where the well-known folders live.
+    const USER_SHELL_FOLDERS: &str =
+        r"Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders";
+
+    /// See [`super::user_shell_folder`]. A read-only `open`, never `create`.
+    pub(super) fn user_shell_folder(value_name: &str) -> Option<PathBuf> {
+        let raw = CURRENT_USER
+            .open(USER_SHELL_FOLDERS)
+            .ok()?
+            .get_string(value_name)
+            .ok()?;
+        // `get_string` hands back `REG_EXPAND_SZ` verbatim, so the `%VAR%` is
+        // still there; `expand_env` leaves unset variables alone, which is how
+        // a half-expanded path is detected rather than shipped.
+        let expanded = autotidy_core::template::expand_env(raw.trim());
+        if expanded.is_empty() || expanded.contains('%') {
+            return None;
+        }
+        Some(PathBuf::from(expanded))
+    }
 
     /// `ERROR_FILE_NOT_FOUND` (2). Present for the tests, which pin down that
     /// a missing key is *not* mistaken for a permission problem.

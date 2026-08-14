@@ -50,6 +50,17 @@ running both means two copies organising the same folders simultaneously.
 - **Undo tells you the blast radius up front** — how many actions will be
   reversed, how many cannot be, and what happens if one fails partway.
 - **Explorer context menu moved to the per-user registry hive.** See Fixed.
+- **New rule templates, grouped into categories.** The Templates dialog now
+  offers eight starting points under *Downloads*, *Desktop & documents*,
+  *Photos & video* and *Free up space*, each card saying what it would do
+  ("Delete to Recycle Bin · 1 folder") rather than just how many rules it holds.
+  1.5.0's five are gone: two of them only ever worked in part (see Fixed), one
+  pointed at a `[Your Game Name]` folder that exists on nobody's machine, and
+  one deleted the machine-wide `C:\Windows\Temp`, which needs administrator
+  rights AutoTidy does not have.
+- **Template folders come from Explorer, not from `%USERPROFILE%`.** Where
+  OneDrive has taken over Desktop, Documents or Pictures, templates now point at
+  the folder the user actually sees.
 - The Windows installer is now NSIS (per-user) rather than Inno Setup
   (machine-wide).
 
@@ -79,6 +90,18 @@ new engine against the old one:
   spun the scan loop with no sleep. It is now clamped.
 - **Undo asked you to confirm actions it could not perform**, then reported
   failure afterwards. Non-reversible actions now say so before you commit.
+- **Rule templates ignored their own age limit.** A rule combines "the name
+  matches" and "the file is older than *n* days" with either `AND` or `OR`, and
+  the default is `OR`. None of 1.5.0's templates set it — so "delete files older
+  than 90 days from Downloads" matched every file with a dot in its name, on the
+  day you applied it. Every template now sets `AND` explicitly, and a test
+  enforces it.
+- **A template could only half-apply.** Folders are keyed by path, so two rules
+  on the same folder do not both survive — the second replaces the first.
+  1.5.0's "Organize Video Captures" shipped three rules on `Videos\Captures`,
+  one per extension, and only the last one ever took effect. Templates now use a
+  single rule with a `*.{mp4,mkv,avi}`-style pattern, and a test rejects any
+  template that watches one folder twice.
 
 ### Performance
 

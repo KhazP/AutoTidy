@@ -477,6 +477,31 @@ fn ensure_watch(shared: &Shared, config: &Config, slot: &mut Option<ActiveWatch>
     }
 }
 
+/// Run exactly one scan cycle, without a supervisor.
+///
+/// "Scan now" has to work whether or not monitoring is running — an on-demand
+/// scan that first requires you to start the background engine is not on
+/// demand, and 1.5.0 had no way to force a scan at all, which is half the
+/// reason this exists.
+///
+/// Blocks until the scan finishes, so callers on a UI thread should spawn it.
+/// Emits the same events a scheduled cycle does, then returns the status to
+/// [`EngineStatus::Stopped`]: `run_cycle` ends at `Idle`, which for a one-shot
+/// would leave the UI claiming monitoring is on when nothing is running.
+pub fn scan_once(store: ConfigStore, sink: Arc<dyn EventSink>) -> Option<ScanReport> {
+    let shared = Shared {
+        store,
+        sink,
+        status: Mutex::new(EngineStatus::Stopped),
+        stop: Arc::new(AtomicBool::new(false)),
+        wake: Mutex::new(None),
+        done: Mutex::new(None),
+    };
+    let report = run_cycle(&shared, None);
+    shared.set_status(EngineStatus::Stopped);
+    report
+}
+
 /// One scan cycle over the current on-disk config.
 ///
 /// Reloading per cycle is deliberate: it is how a rule edited in the UI takes
@@ -665,6 +690,78 @@ mod tests {
     /// run — the tests block on channels, not on sleeps — so a generous value
     /// costs nothing and keeps a loaded machine from failing the suite.
     const ARRIVAL: Duration = Duration::from_secs(10);
+
+    // -----------------------------------------------------------------------
+    // scan_once
+    //
+    // "Scan now" used to refuse unless monitoring was already running, so the
+    // button's only effect from a stopped app was an error toast reading
+    // "Monitoring is not running. Start it first." An on-demand scan that
+    // needs a background service started first is not on demand.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn scan_once_moves_files_with_no_supervisor_running() {
+        let f = fixture();
+        f.save(&f.config());
+        f.write("a.txt");
+        f.write("b.txt");
+
+        let report = scan_once(f.store.clone(), Arc::clone(&f.sink)).expect("a scan ran");
+
+        assert_eq!(report.processed, 2);
+        // The files really left the watched folder.
+        assert!(!f.watched.join("a.txt").exists());
+        assert!(!f.watched.join("b.txt").exists());
+    }
+
+    #[test]
+    fn scan_once_leaves_the_status_stopped() {
+        let f = fixture();
+        f.save(&f.config());
+        f.write("a.txt");
+
+        scan_once(f.store.clone(), Arc::clone(&f.sink));
+
+        // `run_cycle` ends at Idle, which the UI renders as "monitoring is on".
+        // A one-shot must hand back a stopped engine or the header lies about
+        // what is running.
+        let statuses: Vec<EngineStatus> = f
+            .events
+            .try_iter()
+            .filter_map(|e| match e {
+                EngineEvent::StatusChanged { status } => Some(status),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            statuses.last(),
+            Some(&EngineStatus::Stopped),
+            "got {statuses:?}"
+        );
+    }
+
+    #[test]
+    fn scan_once_reports_the_same_events_a_scheduled_cycle_does() {
+        let f = fixture();
+        f.save(&f.config());
+        f.write("a.txt");
+
+        scan_once(f.store.clone(), Arc::clone(&f.sink));
+
+        let events: Vec<EngineEvent> = f.events.try_iter().collect();
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, EngineEvent::ScanStarted { .. })),
+            "the UI needs a ScanStarted to show progress"
+        );
+        let finished = events.iter().find_map(|e| match e {
+            EngineEvent::ScanFinished { processed, .. } => Some(*processed),
+            _ => None,
+        });
+        assert_eq!(finished, Some(1));
+    }
 
     struct Fixture {
         tmp: TempDir,

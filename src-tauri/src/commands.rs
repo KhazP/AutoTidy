@@ -177,11 +177,11 @@ fn same_path(left: &str, right: &str) -> bool {
     }
 }
 
-/// The rule templates 1.5.0 shipped in `constants.RULE_TEMPLATES`, with paths
-/// resolved against the current user's home directory.
+/// The starting-point rules the Templates dialog offers, grouped into
+/// categories, with every path resolved for the machine this is running on.
 #[tauri::command]
 pub fn rule_templates() -> Result<serde_json::Value, String> {
-    Ok(build_rule_templates(&home_dir(), &temp_dir()))
+    Ok(build_rule_templates(&UserFolders::detect()))
 }
 
 /// Same lookup order the rest of the codebase uses, so a template path and a
@@ -194,8 +194,7 @@ fn home_dir() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("."))
 }
 
-/// `constants._TEMP`: `%LocalAppData%\Temp` on Windows, the system temp dir
-/// elsewhere.
+/// `%LocalAppData%\Temp` on Windows, the system temp dir elsewhere.
 fn temp_dir() -> PathBuf {
     #[cfg(windows)]
     {
@@ -206,89 +205,243 @@ fn temp_dir() -> PathBuf {
     std::env::temp_dir()
 }
 
-/// Windows' machine-wide temp folder. On other platforms `constants.py` falls
-/// back to the same `_TEMP`, which is reproduced here.
-fn windows_temp_dir(temp: &Path) -> PathBuf {
-    if cfg!(windows) {
-        PathBuf::from("C:/Windows/Temp")
-    } else {
-        temp.to_path_buf()
+/// The folders the templates point at, resolved once per request.
+///
+/// Separated from [`build_rule_templates`] so the template set stays a pure
+/// function of six paths and can be tested without a real home directory — and
+/// so the one piece that *is* machine-dependent, [`UserFolders::detect`], is the
+/// only thing that touches the registry.
+#[derive(Debug, Clone)]
+struct UserFolders {
+    downloads: PathBuf,
+    desktop: PathBuf,
+    documents: PathBuf,
+    pictures: PathBuf,
+    videos: PathBuf,
+    temp: PathBuf,
+}
+
+impl UserFolders {
+    /// Ask Explorer first, fall back to the home-relative name.
+    ///
+    /// The fallback is what 1.5.0 always did, and it is wrong on any machine
+    /// where OneDrive has taken over Desktop/Documents/Pictures — see
+    /// [`crate::platform::user_shell_folder`]. The registry value names are
+    /// Explorer's, not the display names: Documents is `Personal`, Videos is
+    /// `My Video`, and Downloads is a GUID because it postdates the others.
+    fn detect() -> Self {
+        let home = home_dir();
+        let resolve = |value_name: &str, fallback: &str| {
+            crate::platform::user_shell_folder(value_name).unwrap_or_else(|| home.join(fallback))
+        };
+
+        Self {
+            downloads: resolve("{374DE290-123F-4565-9164-39C4925E467B}", "Downloads"),
+            desktop: resolve("Desktop", "Desktop"),
+            documents: resolve("Personal", "Documents"),
+            pictures: resolve("My Pictures", "Pictures"),
+            videos: resolve("My Video", "Videos"),
+            temp: temp_dir(),
+        }
+    }
+
+    /// The unredirected layout, for tests and for any platform without a
+    /// registry to ask.
+    #[cfg(test)]
+    fn under(home: &Path, temp: &Path) -> Self {
+        Self {
+            downloads: home.join("Downloads"),
+            desktop: home.join("Desktop"),
+            documents: home.join("Documents"),
+            pictures: home.join("Pictures"),
+            videos: home.join("Videos"),
+            temp: temp.to_path_buf(),
+        }
     }
 }
 
-/// Built as a pure function of the two directories so the port can be tested
-/// without depending on the machine's real home.
-fn build_rule_templates(home: &Path, temp: &Path) -> serde_json::Value {
-    let text = |p: PathBuf| p.to_string_lossy().into_owned();
-    let rule = |folder: String, pattern: &str, action: &str, destination: String, days: i64| {
-        json!({
-            "folder_to_watch": folder,
-            "file_pattern": pattern,
-            "action": action,
-            "destination_folder": destination,
-            "days_older_than": days,
-            "enabled": true,
-            "use_regex": false,
-        })
-    };
+/// One rule inside a template.
+///
+/// `rule_logic` is **always** `AND`, and that is the single most important line
+/// in this file. A rule's two predicates are "name matches the pattern" and "the
+/// file is older than `age_days`", and the config default combines them with
+/// `OR` — so 1.5.0's "delete Downloads older than 90 days" template, which left
+/// the field unset, actually matched every file with a dot in its name on the
+/// day it was added. Every template here promises pattern *and* age, so every
+/// template here spells that out. An `age_days` of `0` still means "no age
+/// limit": the age predicate is trivially satisfied, leaving the pattern alone
+/// to decide.
+fn template_rule(
+    folder: &Path,
+    pattern: &str,
+    age_days: i64,
+    action: &str,
+    destination: Option<PathBuf>,
+    exclusions: &[&str],
+) -> serde_json::Value {
+    json!({
+        "path": folder.to_string_lossy(),
+        "pattern": pattern,
+        "age_days": age_days,
+        "rule_logic": "AND",
+        "use_regex": false,
+        "action": action,
+        "destination_folder": destination.map(|d| d.to_string_lossy().into_owned()).unwrap_or_default(),
+        "exclusions": exclusions,
+        "enabled": true,
+    })
+}
 
-    let screenshots = text(home.join("Pictures").join("Organized Screenshots"));
-    let captures = text(home.join("Videos").join("Captures"));
-    let archived_captures = text(home.join("Videos").join("Archived Captures"));
-    let game_captures = home
-        .join("Videos")
-        .join("[Your Game Name]")
-        .join("Captures");
+/// The template catalogue.
+///
+/// Three constraints shape what can be in here, and all three are load-bearing:
+///
+/// * **One rule per folder.** Config keys folders by path, so two rules in one
+///   template that watch the same folder do not both survive — the second
+///   overwrites the first. (1.5.0's video template shipped three rules on
+///   `Videos\Captures`; only the last one ever took effect.) Where a template
+///   needs several file types from one folder, that is one rule with a
+///   brace-alternation glob, not several rules.
+/// * **`{YYYY}`/`{MM}` are stamped when the file is *filed*, not from the
+///   file's own timestamp.** So a destination can promise "a folder per month
+///   of tidying" and must not promise "your photos sorted by the year they were
+///   taken".
+/// * **No `copy` templates.** A recurring copy re-copies what it already
+///   copied; collision handling gives the second run `report_1.pdf`, the third
+///   `report_2.pdf`, and so on. Copy is a fine thing to configure by hand for a
+///   one-off, and a bad thing to hand someone as a scheduled rule.
+fn build_rule_templates(folders: &UserFolders) -> serde_json::Value {
+    let UserFolders {
+        downloads,
+        desktop,
+        documents,
+        pictures,
+        videos,
+        temp,
+    } = folders;
+
+    // Names that mean "this download is still arriving" or "Explorer wrote
+    // this, not you". Excluding them costs nothing and removes the two ways a
+    // Downloads or Desktop rule can visibly do the wrong thing.
+    const PARTIAL_DOWNLOADS: &[&str] = &["*.crdownload", "*.part", "*.tmp", "desktop.ini"];
+    const SHORTCUTS: &[&str] = &["*.lnk", "*.url", "desktop.ini"];
+
+    let screenshots = pictures.join("Screenshots");
+    let archived_captures = videos.join("Archived Captures").join("{YYYY}-{MM}");
 
     json!([
         {
-            "name": "Clean up Downloads",
-            "description": "Deletes files older than 90 days from your Downloads folder.",
-            "rules": [rule(
-                text(home.join("Downloads")),
-                "*.*",
-                "delete_to_trash",
-                String::new(),
+            "category": "Downloads",
+            "name": "Tidy up Downloads",
+            "description": "Anything in Downloads that hasn't changed in 30 days moves into a dated 'Sorted' subfolder. Nothing is deleted, and part-finished downloads are left alone.",
+            "rules": [template_rule(
+                downloads,
+                "*",
+                30,
+                "move",
+                Some(downloads.join("Sorted").join("{YYYY}-{MM}")),
+                PARTIAL_DOWNLOADS,
+            )],
+        },
+        {
+            "category": "Downloads",
+            "name": "Send old downloads to the Recycle Bin",
+            "description": "Files in Downloads older than 90 days go to the Recycle Bin, where you can still get them back until you empty it.",
+            "rules": [template_rule(
+                downloads,
+                "*",
                 90,
+                "delete_to_trash",
+                None,
+                PARTIAL_DOWNLOADS,
             )],
         },
         {
-            "name": "Organize Screenshots",
-            "description": "Moves screenshots named like 'Screenshot YYYY-MM-DD HHMMSS.png' from your Pictures/Screenshots folder to 'Pictures/Organized Screenshots'.",
-            "rules": [rule(
-                text(home.join("Pictures").join("Screenshots")),
-                "Screenshot ????-??-?? ??????.png",
+            "category": "Desktop & documents",
+            "name": "Keep the Desktop clear",
+            "description": "Files left on the Desktop for more than 14 days move to a dated folder inside Documents. Shortcuts stay where they are.",
+            "rules": [template_rule(
+                desktop,
+                "*",
+                14,
                 "move",
-                screenshots,
-                0,
+                Some(documents.join("Desktop Archive").join("{YYYY}-{MM}")),
+                SHORTCUTS,
             )],
         },
         {
-            "name": "Organize Video Captures",
-            "description": "Moves video captures (MP4, AVI, MKV) older than 30 days from Videos/Captures to 'Videos/Archived Captures'.",
-            "rules": [
-                rule(captures.clone(), "*.mp4", "move", archived_captures.clone(), 30),
-                rule(captures.clone(), "*.avi", "move", archived_captures.clone(), 30),
-                rule(captures, "*.mkv", "move", archived_captures, 30),
-            ],
-        },
-        {
-            "name": "Clean Temporary Files",
-            "description": "Deletes all files from system temporary folders. Use with caution.",
-            "rules": [
-                rule(text(windows_temp_dir(temp)), "*.*", "delete_permanently", String::new(), 0),
-                rule(text(temp.to_path_buf()), "*.*", "delete_permanently", String::new(), 0),
-            ],
-        },
-        {
-            "name": "Organize Game Captures (Example)",
-            "description": "Example: Moves MP4 game captures from a specific game's capture folder to an 'Organized' subfolder. Customize the path for your game.",
-            "rules": [rule(
-                text(game_captures.clone()),
-                "*.mp4",
+            "category": "Desktop & documents",
+            "name": "Archive old documents",
+            "description": "Documents, spreadsheets and slides that haven't changed in a year move into an 'Archive' folder, so Documents shows only what you're still working on.",
+            "rules": [template_rule(
+                documents,
+                "*.{pdf,doc,docx,odt,rtf,txt,md,xls,xlsx,ods,csv,ppt,pptx,odp}",
+                365,
                 "move",
-                text(game_captures.join("Organized")),
+                Some(documents.join("Archive").join("{YYYY}")),
+                &[],
+            )],
+        },
+        {
+            "category": "Photos & video",
+            "name": "Sort screenshots into dated folders",
+            "description": "Screenshots move out of Pictures\\Screenshots into a folder named for the month they were filed. There's no age limit — this runs on every scan.",
+            "rules": [template_rule(
+                &screenshots,
+                "*.{png,jpg,jpeg}",
                 0,
+                "move",
+                Some(screenshots.join("{YYYY}-{MM}")),
+                &[],
+            )],
+        },
+        {
+            "category": "Photos & video",
+            "name": "Archive game and screen recordings",
+            "description": "Recordings older than 30 days move out of the two folders Windows records into, and into 'Videos\\Archived Captures'.",
+            "rules": [
+                template_rule(
+                    &videos.join("Captures"),
+                    "*.{mp4,mkv,avi,mov,wmv}",
+                    30,
+                    "move",
+                    Some(archived_captures.clone()),
+                    &[],
+                ),
+                template_rule(
+                    &videos.join("Screen Recordings"),
+                    "*.{mp4,mkv,avi,mov,wmv}",
+                    30,
+                    "move",
+                    Some(archived_captures),
+                    &[],
+                ),
+            ],
+        },
+        {
+            "category": "Free up space",
+            "name": "Clear out old installers",
+            "description": "Setup files and disc images sitting in Downloads for over 30 days go to the Recycle Bin. Programs you already installed are not affected.",
+            "rules": [template_rule(
+                downloads,
+                "*.{exe,msi,msix,msixbundle,appx,appxbundle,iso,img,dmg,pkg}",
+                30,
+                "delete_to_trash",
+                None,
+                &[],
+            )],
+        },
+        {
+            "category": "Free up space",
+            "name": "Empty the temp folder",
+            "description": "Deletes anything in your temporary folder untouched for 7 days. This one is permanent — nothing goes to the Recycle Bin. Files currently in use are skipped.",
+            "rules": [template_rule(
+                temp,
+                "*",
+                7,
+                "delete_permanently",
+                None,
+                &[],
             )],
         },
     ])
@@ -373,18 +526,32 @@ pub fn stop_engine(state: &AppState, timeout: std::time::Duration) -> Result<(),
 
 /// Run a scan immediately, without waiting for the interval.
 #[tauri::command]
-pub fn scan_now(state: tauri::State<'_, AppState>) -> Result<(), String> {
+pub fn scan_now(app: tauri::AppHandle, state: tauri::State<'_, AppState>) -> Result<(), String> {
     let guard = state
         .engine
         .lock()
         .map_err(|_| "engine state is poisoned".to_string())?;
-    match guard.as_ref() {
-        Some(engine) => {
-            engine.scan_now();
-            Ok(())
-        }
-        None => Err("Monitoring is not running. Start it first.".to_string()),
+
+    if let Some(engine) = guard.as_ref() {
+        // Monitoring is on: wake the supervisor rather than scanning alongside
+        // it, or two scans could run over the same folders at once.
+        engine.scan_now();
+        return Ok(());
     }
+    drop(guard);
+
+    // Stopped. Run a single cycle anyway — refusing here made the button an
+    // error message, and an on-demand scan you have to start a background
+    // service to use is not on demand.
+    let store = state.store.clone();
+    let sink = std::sync::Arc::new(crate::EngineBridge::new(app));
+    std::thread::Builder::new()
+        .name("autotidy-scan-once".into())
+        .spawn(move || {
+            autotidy_core::engine::scan_once(store, sink);
+        })
+        .map_err(|e| fail("start one-off scan", e))?;
+    Ok(())
 }
 
 /// Dry-evaluate a rule the user is editing — 1.5.0's "Preview Matches" button.
@@ -1159,61 +1326,174 @@ mod tests {
 
     // --- rule templates ---------------------------------------------------
 
-    #[test]
-    fn rule_templates_match_the_1_5_0_set() {
-        let home = Path::new("/home/tester");
-        let templates = build_rule_templates(home, Path::new("/tmp"));
-        let items = templates.as_array().expect("an array of templates");
+    fn test_templates() -> serde_json::Value {
+        build_rule_templates(&UserFolders::under(
+            Path::new("/home/tester"),
+            Path::new("/tmp"),
+        ))
+    }
 
-        let names: Vec<&str> = items.iter().map(|t| t["name"].as_str().unwrap()).collect();
-        assert_eq!(
-            names,
-            vec![
-                "Clean up Downloads",
-                "Organize Screenshots",
-                "Organize Video Captures",
-                "Clean Temporary Files",
-                "Organize Game Captures (Example)",
-            ]
-        );
-
-        // Video captures shipped three rules, one per extension.
-        assert_eq!(items[2]["rules"].as_array().unwrap().len(), 3);
-        assert_eq!(items[0]["rules"][0]["days_older_than"], 90);
-        assert_eq!(items[0]["rules"][0]["action"], "delete_to_trash");
+    fn every_rule(templates: &serde_json::Value) -> Vec<&serde_json::Value> {
+        templates
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|t| t["rules"].as_array().unwrap())
+            .collect()
     }
 
     #[test]
-    fn rule_templates_resolve_home_at_runtime() {
-        let templates = build_rule_templates(Path::new("/home/tester"), Path::new("/tmp"));
-        let downloads = templates[0]["rules"][0]["folder_to_watch"]
+    fn rule_templates_are_grouped_into_categories() {
+        let templates = test_templates();
+        let items = templates.as_array().expect("an array of templates");
+        assert!(!items.is_empty());
+
+        // Every template is filed, and each category's templates are adjacent —
+        // the dialog renders them in order under one heading per category, so a
+        // category split across the list would draw that heading twice.
+        let mut seen: Vec<&str> = Vec::new();
+        for item in items {
+            let category = item["category"].as_str().expect("a category");
+            assert!(!category.is_empty());
+            if seen.last() != Some(&category) {
+                assert!(
+                    !seen.contains(&category),
+                    "category {category} appears in two runs"
+                );
+                seen.push(category);
+            }
+        }
+        assert!(seen.len() > 1, "the point is to have more than one group");
+    }
+
+    #[test]
+    fn template_names_are_unique() {
+        // The dialog keys its cards by name.
+        let templates = test_templates();
+        let mut names: Vec<&str> = templates
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|t| t["name"].as_str().unwrap())
+            .collect();
+        let total = names.len();
+        names.sort_unstable();
+        names.dedup();
+        assert_eq!(names.len(), total, "duplicate template name");
+    }
+
+    #[test]
+    fn every_template_rule_carries_the_full_field_set() {
+        let templates = test_templates();
+        for rule in every_rule(&templates) {
+            for key in [
+                "path",
+                "pattern",
+                "age_days",
+                "rule_logic",
+                "use_regex",
+                "action",
+                "destination_folder",
+                "exclusions",
+                "enabled",
+            ] {
+                assert!(rule.get(key).is_some(), "{key} missing from {rule}");
+            }
+        }
+    }
+
+    /// The bug that made 1.5.0's templates lie. With the config default of
+    /// `OR`, "delete files older than 90 days" matched anything whose *name*
+    /// matched too — i.e. everything, immediately.
+    #[test]
+    fn every_template_rule_combines_pattern_and_age_with_and() {
+        let templates = test_templates();
+        for rule in every_rule(&templates) {
+            assert_eq!(rule["rule_logic"], "AND", "in {rule}");
+        }
+    }
+
+    /// Config keys folders by path, so a second rule on a path silently
+    /// replaces the first — a template that did this would apply only in part.
+    #[test]
+    fn no_template_watches_the_same_folder_twice() {
+        let templates = test_templates();
+        for template in templates.as_array().unwrap() {
+            let mut paths: Vec<&str> = template["rules"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|r| r["path"].as_str().unwrap())
+                .collect();
+            let total = paths.len();
+            paths.sort_unstable();
+            paths.dedup();
+            assert_eq!(
+                paths.len(),
+                total,
+                "{} watches a folder twice",
+                template["name"]
+            );
+        }
+    }
+
+    #[test]
+    fn template_destinations_are_valid_archive_templates() {
+        let templates = test_templates();
+        for rule in every_rule(&templates) {
+            let destination = rule["destination_folder"].as_str().unwrap();
+            assert!(
+                autotidy_core::template::validate(destination).is_ok(),
+                "{destination} would be rejected by the archive-template validator"
+            );
+
+            // A destination only means anything for move/copy; the delete
+            // actions must not carry one.
+            let action = rule["action"].as_str().unwrap();
+            if action.starts_with("delete") {
+                assert!(destination.is_empty(), "{action} carries {destination}");
+            } else {
+                assert!(!destination.is_empty(), "{action} has no destination");
+            }
+        }
+    }
+
+    /// Every template rule is a `Rule` the engine can actually run: the glob
+    /// compiles, the logic survives the round trip, and the action is a real
+    /// one. That last check is not redundant — `Action` deserialises leniently
+    /// and turns anything it does not recognise into `move`, so a typo here
+    /// would otherwise turn a "send to the Recycle Bin" template into a silent
+    /// move.
+    #[test]
+    fn template_rules_round_trip_into_engine_rules() {
+        let templates = test_templates();
+        for value in every_rule(&templates) {
+            let rule: autotidy_core::config::Rule =
+                serde_json::from_value(value.clone()).expect("a template rule is a Rule");
+            assert_eq!(rule.action.as_str(), value["action"], "in {value}");
+            assert_eq!(rule.rule_logic, autotidy_core::config::RuleLogic::And);
+            assert!(rule.enabled);
+            autotidy_core::rule::CompiledRule::compile(&rule)
+                .unwrap_or_else(|e| panic!("{}: {e}", rule.pattern));
+        }
+    }
+
+    #[test]
+    fn rule_templates_resolve_the_users_folders_at_runtime() {
+        let templates = test_templates();
+        let downloads = templates[0]["rules"][0]["path"]
             .as_str()
             .unwrap()
             .replace('\\', "/");
 
         assert_eq!(downloads, "/home/tester/Downloads");
-        // Never the literal Python expression that produced it.
-        assert!(!downloads.contains("Path.home"));
-        assert!(!downloads.contains("%UserProfile%"));
-    }
-
-    #[test]
-    fn every_template_rule_carries_the_full_field_set() {
-        let templates = build_rule_templates(Path::new("/home/tester"), Path::new("/tmp"));
-        for template in templates.as_array().unwrap() {
-            for rule in template["rules"].as_array().unwrap() {
-                for key in [
-                    "folder_to_watch",
-                    "file_pattern",
-                    "action",
-                    "destination_folder",
-                    "days_older_than",
-                    "enabled",
-                    "use_regex",
-                ] {
-                    assert!(rule.get(key).is_some(), "{key} missing from {rule}");
-                }
-            }
+        // Never the literal Python expression that produced 1.5.0's paths, and
+        // never the placeholder folder its "example" template shipped.
+        for rule in every_rule(&templates) {
+            let path = rule["path"].as_str().unwrap();
+            assert!(!path.contains("Path.home"), "{path}");
+            assert!(!path.contains('%'), "{path}");
+            assert!(!path.contains('['), "{path}");
         }
     }
 }

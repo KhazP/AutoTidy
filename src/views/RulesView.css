@@ -369,6 +369,17 @@
   background: var(--bg-surface);
 }
 
+.template-group + .template-group {
+  margin-top: var(--sp-4);
+}
+
+.template-group__title {
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: var(--fs-sm);
+}
+
 .template-card {
   display: flex;
   gap: var(--sp-3);
