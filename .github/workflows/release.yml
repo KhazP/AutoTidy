@@ -180,11 +180,20 @@ jobs:
       # actually downloads.
       - name: Checksums
         run: |
-          Get-ChildItem release/*.exe | ForEach-Object {
-            $h = (Get-FileHash $_.FullName -Algorithm SHA256).Hash
-            "$h  $($_.Name)" | Out-File -Append -Encoding utf8 release/SHA256SUMS.txt
+          # Written with explicit LF and no BOM. PowerShell's Out-File emits
+          # CRLF, which puts a trailing CR inside the *filename* as far as
+          # `sha256sum -c` is concerned, so every line fails with
+          # "No such file or directory" — on a file whose whole purpose is
+          # letting people verify a download they were told not to trust.
+          $lines = Get-ChildItem release/*.exe | ForEach-Object {
+            $h = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower()
             Write-Host "$h  $($_.Name)"
+            "$h  $($_.Name)"
           }
+          [IO.File]::WriteAllText(
+            "$PWD/release/SHA256SUMS.txt",
+            ($lines -join "`n") + "`n",
+            (New-Object Text.UTF8Encoding $false))
 
       - name: Publish the release
         uses: softprops/action-gh-release@v2
