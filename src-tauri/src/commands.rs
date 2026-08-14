@@ -385,13 +385,20 @@ fn build_rule_templates(folders: &UserFolders) -> serde_json::Value {
         {
             "category": "Photos & video",
             "name": "Sort screenshots into dated folders",
-            "description": "Screenshots move out of Pictures\\Screenshots into a folder named for the month they were filed. There's no age limit — this runs on every scan.",
+            "description": "Screenshots move into 'Screenshots\\Sorted', under a folder named for the month they were filed. There's no age limit — this runs on every scan.",
             "rules": [template_rule(
                 &screenshots,
                 "*.{png,jpg,jpeg}",
                 0,
                 "move",
-                Some(screenshots.join("{YYYY}-{MM}")),
+                // Not `Screenshots\{YYYY}-{MM}` directly: a destination whose
+                // placeholder-free prefix *is* the monitored folder makes
+                // `guard_paths` prune the folder it was asked to scan, and the
+                // rule silently stops matching anything once the user turns on
+                // recursive scanning. The named level in between is what keeps
+                // the guard below the root. See `template_guards_never_prune_
+                // the_folder_being_watched`.
+                Some(screenshots.join("Sorted").join("{YYYY}-{MM}")),
                 &[],
             )],
         },
@@ -1475,6 +1482,31 @@ mod tests {
             assert!(rule.enabled);
             autotidy_core::rule::CompiledRule::compile(&rule)
                 .unwrap_or_else(|e| panic!("{}: {e}", rule.pattern));
+        }
+    }
+
+    /// A move rule's own destination is pruned from its walk, so it never
+    /// re-processes what it just filed. The prune target is the destination's
+    /// deepest placeholder-free prefix — which, for a destination like
+    /// `…\Screenshots\{YYYY}-{MM}`, is `…\Screenshots`: the monitored folder
+    /// itself. That prunes the walk at its root, and the rule quietly matches
+    /// nothing at all the moment recursive scanning is switched on.
+    ///
+    /// Flat scanning (the default) does not consult the guards, so a template
+    /// with this shape looks perfectly healthy until a user changes an unrelated
+    /// setting. Hence a test rather than a comment.
+    #[test]
+    fn template_guards_never_prune_the_folder_being_watched() {
+        let templates = test_templates();
+        for value in every_rule(&templates) {
+            let rule: autotidy_core::config::Rule = serde_json::from_value(value.clone()).unwrap();
+            let monitored = Path::new(&rule.path);
+            let guards = guard_paths(&rule, &rule.destination_folder, monitored);
+            assert!(
+                !guards.contains(&autotidy_core::config::normalize(monitored)),
+                "{} would prune its own monitored folder",
+                rule.path
+            );
         }
     }
 
