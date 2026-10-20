@@ -69,6 +69,7 @@ export function newRule(path: string): Rule {
     destination_folder: "",
     exclusions: [],
     enabled: true,
+    delete_empty_folders: false,
   };
 }
 
@@ -87,6 +88,7 @@ export function ruleDiffers(a: Rule, b: Rule): boolean {
     a.action !== b.action ||
     a.destination_folder !== b.destination_folder ||
     a.enabled !== b.enabled ||
+    Boolean(a.delete_empty_folders) !== Boolean(b.delete_empty_folders) ||
     a.exclusions.length !== b.exclusions.length ||
     a.exclusions.some((v, i) => v !== b.exclusions[i])
   );
@@ -233,6 +235,7 @@ export function ruleFromTemplate(entry: RuleTemplate["rules"][number]): Rule | n
     destination_folder: asString(rest.destination_folder, ""),
     exclusions,
     enabled: asBoolean(rest.enabled, true),
+    delete_empty_folders: asBoolean(rest.delete_empty_folders, false),
   };
 }
 

@@ -25,7 +25,7 @@ use crate::action::{self, ActionContext};
 use crate::config::{normalize, Config, Rule};
 use crate::history::{HistoryRecord, Status};
 use crate::rule::CompiledRule;
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
@@ -211,6 +211,188 @@ pub fn scan_rule(
             Err(e) => {
                 report.failed += 1;
                 report.errors.push(format!("{}: {e}", file.display()));
+            }
+        }
+    }
+
+    if rule.delete_empty_folders {
+        let cleaner = FolderCleaner {
+            folder: &folder,
+            rule,
+            compiled: &compiled,
+            config,
+            opts,
+            guards: &guards,
+            run_id,
+        };
+        cleaner.clean(report);
+    }
+}
+
+struct FolderCleaner<'a> {
+    folder: &'a Path,
+    rule: &'a Rule,
+    compiled: &'a CompiledRule,
+    config: &'a Config,
+    opts: &'a ScanOptions,
+    guards: &'a BTreeSet<PathBuf>,
+    run_id: &'a str,
+}
+
+impl<'a> FolderCleaner<'a> {
+    fn clean(&self, report: &mut ScanReport) {
+        use ignore::WalkBuilder;
+
+        let max_depth = if self.opts.max_depth == 0 {
+            1
+        } else {
+            self.opts.max_depth as usize
+        };
+
+        let mut builder = WalkBuilder::new(self.folder);
+        builder
+            .max_depth(Some(max_depth))
+            .git_ignore(false)
+            .git_global(false)
+            .git_exclude(false)
+            .ignore(false)
+            .parents(false)
+            .hidden(false)
+            .follow_links(false);
+
+        let guards_clone = self.guards.clone();
+        builder.filter_entry(move |entry| {
+            let path = normalize(entry.path());
+            !guards_clone
+                .iter()
+                .any(|g| path == *g || path.starts_with(g))
+        });
+
+        let norm_folder = normalize(self.folder);
+        let mut dirs: Vec<PathBuf> = Vec::new();
+
+        for result in builder.build() {
+            if self.opts.cancelled() {
+                return;
+            }
+            let entry = match result {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+            if entry.file_type().is_some_and(|ft| ft.is_dir()) {
+                let path = entry.into_path();
+                if normalize(&path) != norm_folder {
+                    dirs.push(path);
+                }
+            }
+        }
+
+        // Deepest directories first: descending by component count, then deterministically by path.
+        dirs.sort_by(|a, b| {
+            let depth_a = a.components().count();
+            let depth_b = b.components().count();
+            depth_b.cmp(&depth_a).then_with(|| a.cmp(b))
+        });
+
+        let mut simulated_deleted: HashSet<PathBuf> = HashSet::new();
+
+        for dir in dirs {
+            if self.opts.cancelled() {
+                return;
+            }
+
+            let norm_dir = normalize(&dir);
+            if self
+                .guards
+                .iter()
+                .any(|g| norm_dir == *g || norm_dir.starts_with(g))
+            {
+                continue;
+            }
+            if self.config.is_globally_excluded(&dir) {
+                continue;
+            }
+            if let Some(name) = dir.file_name().and_then(|n| n.to_str()) {
+                if self.compiled.is_excluded(name) {
+                    continue;
+                }
+            }
+
+            let is_empty = match std::fs::read_dir(&dir) {
+                Ok(entries) => {
+                    let mut empty = true;
+                    for entry in entries.flatten() {
+                        let child = entry.path();
+                        if !simulated_deleted.contains(&child) {
+                            empty = false;
+                            break;
+                        }
+                    }
+                    empty
+                }
+                Err(_) => false,
+            };
+
+            if !is_empty {
+                continue;
+            }
+
+            if self.opts.dry_run {
+                simulated_deleted.insert(dir.clone());
+                report.records.push(
+                    HistoryRecord {
+                        original_path: dir.to_string_lossy().into_owned(),
+                        action_taken: "SIMULATED_DELETE_EMPTY_FOLDER".to_string(),
+                        destination_path: None,
+                        monitored_folder: self.folder.to_string_lossy().into_owned(),
+                        rule_pattern: self.rule.pattern.clone(),
+                        rule_age_days: self.rule.age_days,
+                        rule_use_regex: self.rule.use_regex,
+                        rule_action_config: self.rule.action.as_str().to_string(),
+                        status: Status::Success,
+                        details: format!("Would delete empty folder: {}", dir.display()),
+                        run_id: self.run_id.to_string(),
+                        severity: "INFO".to_string(),
+                        timestamp: String::new(),
+                        copy_size: None,
+                        copy_mtime: None,
+                        extra: Default::default(),
+                    }
+                    .finalize(),
+                );
+            } else {
+                match std::fs::remove_dir(&dir) {
+                    Ok(()) => {
+                        report.records.push(
+                            HistoryRecord {
+                                original_path: dir.to_string_lossy().into_owned(),
+                                action_taken: "DELETE_EMPTY_FOLDER".to_string(),
+                                destination_path: None,
+                                monitored_folder: self.folder.to_string_lossy().into_owned(),
+                                rule_pattern: self.rule.pattern.clone(),
+                                rule_age_days: self.rule.age_days,
+                                rule_use_regex: self.rule.use_regex,
+                                rule_action_config: self.rule.action.as_str().to_string(),
+                                status: Status::Success,
+                                details: format!("Deleted empty folder: {}", dir.display()),
+                                run_id: self.run_id.to_string(),
+                                severity: "INFO".to_string(),
+                                timestamp: String::new(),
+                                copy_size: None,
+                                copy_mtime: None,
+                                extra: Default::default(),
+                            }
+                            .finalize(),
+                        );
+                    }
+                    Err(e) => {
+                        report.failed += 1;
+                        report.errors.push(format!(
+                            "Failed to delete empty folder {}: {e}",
+                            dir.display()
+                        ));
+                    }
+                }
             }
         }
     }
@@ -573,5 +755,148 @@ mod tests {
     #[test]
     fn cancellation_defaults_to_off() {
         assert!(!ScanOptions::default().cancelled());
+    }
+
+    // -----------------------------------------------------------------------
+    // Empty folder deletion
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn scan_rule_leaves_empty_folders_alone_by_default() {
+        let dir = tempfile::tempdir().unwrap();
+        let empty_sub = dir.path().join("empty_sub");
+        std::fs::create_dir_all(&empty_sub).unwrap();
+
+        let mut rule = Rule::new(dir.path().to_string_lossy().into_owned());
+        rule.delete_empty_folders = false;
+        let config = Config::default();
+        let opts = ScanOptions {
+            max_depth: 3,
+            ..Default::default()
+        };
+
+        let mut report = ScanReport::default();
+        scan_rule(&rule, &config, "run-1", &opts, &mut report);
+
+        assert!(
+            empty_sub.exists(),
+            "empty folder must not be deleted when option is off"
+        );
+    }
+
+    #[test]
+    fn scan_rule_deletes_empty_folders_recursively_when_enabled() {
+        let dir = tempfile::tempdir().unwrap();
+        let empty_sub = dir.path().join("empty_sub");
+        let nested_deep = dir.path().join("nested").join("deep");
+        let with_file = dir.path().join("with_file");
+
+        std::fs::create_dir_all(&empty_sub).unwrap();
+        std::fs::create_dir_all(&nested_deep).unwrap();
+        std::fs::create_dir_all(&with_file).unwrap();
+        std::fs::write(with_file.join("stay.keep"), b"data").unwrap();
+
+        let mut rule = Rule::new(dir.path().to_string_lossy().into_owned());
+        rule.delete_empty_folders = true;
+        // Don't match .keep files so stay.keep stays
+        rule.pattern = "*.txt".into();
+        let config = Config::default();
+        let opts = ScanOptions {
+            max_depth: 5,
+            ..Default::default()
+        };
+
+        let mut report = ScanReport::default();
+        scan_rule(&rule, &config, "run-2", &opts, &mut report);
+
+        assert!(!empty_sub.exists(), "empty_sub should be deleted");
+        assert!(!nested_deep.exists(), "nested/deep should be deleted");
+        assert!(
+            !dir.path().join("nested").exists(),
+            "nested should be deleted after deep is gone"
+        );
+        assert!(with_file.exists(), "folder with files must remain");
+        assert!(with_file.join("stay.keep").exists());
+        assert!(
+            dir.path().exists(),
+            "root monitored directory itself must never be deleted"
+        );
+    }
+
+    #[test]
+    fn scan_rule_dry_run_leaves_empty_folders_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        let empty_sub = dir.path().join("empty_sub");
+        std::fs::create_dir_all(&empty_sub).unwrap();
+
+        let mut rule = Rule::new(dir.path().to_string_lossy().into_owned());
+        rule.delete_empty_folders = true;
+        let config = Config::default();
+        let opts = ScanOptions {
+            dry_run: true,
+            max_depth: 3,
+            ..Default::default()
+        };
+
+        let mut report = ScanReport::default();
+        scan_rule(&rule, &config, "run-dry", &opts, &mut report);
+
+        assert!(empty_sub.exists(), "dry run must not delete empty folders");
+    }
+
+    #[test]
+    fn scan_rule_deletes_folder_that_becomes_empty_after_file_action() {
+        let dir = tempfile::tempdir().unwrap();
+        let sub = dir.path().join("temporary_folder");
+        std::fs::create_dir_all(&sub).unwrap();
+        std::fs::write(sub.join("file.txt"), b"temp").unwrap();
+
+        let mut rule = Rule::new(dir.path().to_string_lossy().into_owned());
+        rule.delete_empty_folders = true;
+        rule.action = crate::config::Action::DeletePermanently;
+        rule.pattern = "*.txt".into();
+        rule.age_days = 0;
+        rule.rule_logic = crate::config::RuleLogic::And;
+
+        let config = Config::default();
+        let opts = ScanOptions {
+            max_depth: 3,
+            ..Default::default()
+        };
+
+        let mut report = ScanReport::default();
+        scan_rule(&rule, &config, "run-clean", &opts, &mut report);
+
+        assert!(!sub.join("file.txt").exists(), "file should be deleted");
+        assert!(!sub.exists(), "sub should be deleted after becoming empty");
+    }
+
+    #[test]
+    fn scan_rule_preserves_guarded_and_excluded_folders() {
+        let dir = tempfile::tempdir().unwrap();
+        let excluded_sub = dir.path().join("excluded_folder");
+        let dest_sub = dir.path().join("_Cleanup");
+        std::fs::create_dir_all(&excluded_sub).unwrap();
+        std::fs::create_dir_all(&dest_sub).unwrap();
+
+        let mut rule = Rule::new(dir.path().to_string_lossy().into_owned());
+        rule.delete_empty_folders = true;
+        rule.destination_folder = "_Cleanup".into();
+        rule.exclusions = vec!["excluded_folder".into()];
+
+        let config = Config::default();
+        let opts = ScanOptions {
+            max_depth: 3,
+            ..Default::default()
+        };
+
+        let mut report = ScanReport::default();
+        scan_rule(&rule, &config, "run-guard", &opts, &mut report);
+
+        assert!(excluded_sub.exists(), "excluded folder must be preserved");
+        assert!(
+            dest_sub.exists(),
+            "destination archive folder must be preserved"
+        );
     }
 }

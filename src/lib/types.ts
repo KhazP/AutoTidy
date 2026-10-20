@@ -27,6 +27,7 @@ export interface Rule {
   destination_folder: string;
   exclusions: string[];
   enabled: boolean;
+  delete_empty_folders?: boolean;
   /** Unknown keys preserved verbatim across a round-trip. */
   [extra: string]: unknown;
 }
