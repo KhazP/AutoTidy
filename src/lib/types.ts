@@ -33,7 +33,7 @@ export interface Rule {
 
 export interface Settings {
   start_on_login: boolean;
-  start_monitoring_on_login: boolean;
+  start_monitoring_on_launch: boolean;
   archive_path_template: string;
   schedule_type: string;
   interval_minutes: number;

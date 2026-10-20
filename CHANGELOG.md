@@ -5,6 +5,17 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- **Start monitoring when AutoTidy starts.** A new switch under Settings →
+  Scheduling turns monitoring on as soon as the app launches — including at
+  sign-in, if AutoTidy is set to start then — instead of leaving it in the tray
+  until you press Start. Off by default. Thanks to @macxq (#73).
+
+---
+
 ## [2.0.0] — 2026-08-14
 
 ### AutoTidy is now a Rust application

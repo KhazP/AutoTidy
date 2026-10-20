@@ -53,6 +53,7 @@ import "./SettingsView.css";
  * heard of survive untouched.
  */
 interface SettingsDraft {
+  start_monitoring_on_launch: boolean;
   schedule_type: string;
   interval_minutes: number;
   dry_run_mode: boolean;
@@ -63,6 +64,7 @@ interface SettingsDraft {
 }
 
 const DRAFT_KEYS: Array<keyof SettingsDraft> = [
+  "start_monitoring_on_launch",
   "schedule_type",
   "interval_minutes",
   "dry_run_mode",
@@ -74,6 +76,7 @@ const DRAFT_KEYS: Array<keyof SettingsDraft> = [
 
 /** Used by the danger-zone confirmation, so it can name each field it resets. */
 const DRAFT_LABELS: Record<keyof SettingsDraft, string> = {
+  start_monitoring_on_launch: "Start monitoring when AutoTidy starts",
   schedule_type: "Schedule type",
   interval_minutes: "Interval (minutes)",
   dry_run_mode: "Dry run mode",
@@ -84,6 +87,7 @@ const DRAFT_LABELS: Record<keyof SettingsDraft, string> = {
 };
 
 const DEFAULT_DRAFT: SettingsDraft = {
+  start_monitoring_on_launch: DEFAULT_SETTINGS.start_monitoring_on_launch,
   schedule_type: DEFAULT_SETTINGS.schedule_type,
   interval_minutes: DEFAULT_SETTINGS.interval_minutes,
   dry_run_mode: DEFAULT_SETTINGS.dry_run_mode,
@@ -95,6 +99,7 @@ const DEFAULT_DRAFT: SettingsDraft = {
 
 function draftFromSettings(s: Settings): SettingsDraft {
   return {
+    start_monitoring_on_launch: s.start_monitoring_on_launch,
     schedule_type: s.schedule_type,
     interval_minutes: s.interval_minutes,
     dry_run_mode: s.dry_run_mode,
@@ -140,7 +145,6 @@ export function SettingsView() {
   const [contextMenuOn, setContextMenuOn] = useState<boolean | null>(null);
   const [autostartState, setAutostartState] = useState<ApplyState>({ kind: "idle" });
   const [contextMenuState, setContextMenuState] = useState<ApplyState>({ kind: "idle" });
-  const [monitoringOnLoginState, setMonitoringOnLoginState] = useState<ApplyState>({ kind: "idle" });
 
   /** Leftovers from AutoTidy 1.x. `null` until detection has answered. */
   const [stale, setStale] = useState<StaleContextMenu | null>(null);
@@ -338,11 +342,7 @@ export function SettingsView() {
       await setAutostart(next);
       setAutostartOn(next);
       // Keep the config record in step with the OS state.
-      // If autostart is disabled, also turn off auto-monitoring on login.
-      await patchSettings({
-        start_on_login: next,
-        ...(next ? {} : { start_monitoring_on_login: false }),
-      });
+      await patchSettings({ start_on_login: next });
       const message = next ? "AutoTidy will start at login" : "Login startup disabled";
       setAutostartState({ kind: "applied", message, at: new Date() });
       push("success", message, "Saved — this one did not need the Save button.");
@@ -351,22 +351,6 @@ export function SettingsView() {
       setAutostartState({ kind: "failed", message });
       push("error", "Could not change the startup setting", message);
       await loadInfo();
-    }
-  }
-
-  async function toggleStartMonitoringOnLogin(next: boolean) {
-    setMonitoringOnLoginState({ kind: "applying" });
-    try {
-      await patchSettings({ start_monitoring_on_login: next });
-      const message = next
-        ? "Monitoring will start automatically on login"
-        : "Automatic monitoring on login disabled";
-      setMonitoringOnLoginState({ kind: "applied", message, at: new Date() });
-      push("success", message, "Saved — this one did not need the Save button.");
-    } catch (err) {
-      const message = errorMessage(err);
-      setMonitoringOnLoginState({ kind: "failed", message });
-      push("error", "Could not change the startup monitoring setting", message);
     }
   }
 
@@ -560,6 +544,16 @@ export function SettingsView() {
           {/* --------------------------------------------------- scheduling */}
           <fieldset className="fieldset">
             <legend>Scheduling</legend>
+            <SwitchField
+              label="Start monitoring when AutoTidy starts"
+              hint={
+                draft.start_monitoring_on_launch
+                  ? "Scans straight away, then on the interval below — including after you sign in, if AutoTidy is set to start then."
+                  : "AutoTidy opens in the tray with monitoring off, and waits for you to press Start monitoring."
+              }
+              checked={draft.start_monitoring_on_launch}
+              onChange={(start_monitoring_on_launch) => patchDraft({ start_monitoring_on_launch })}
+            />
             <div className="grid-2">
               <Field
                 label="Schedule type"
@@ -750,17 +744,6 @@ export function SettingsView() {
                     onChange={(next) => void toggleAutostart(next)}
                     status={<ApplyStatus state={autostartState} />}
                   />
-                  {autostartOn && (
-                    <SwitchField
-                      sub
-                      label="Start monitoring automatically on sign-in"
-                      hint="Runs an immediate scan and watches folders on schedule."
-                      checked={config?.settings.start_monitoring_on_login ?? false}
-                      disabled={monitoringOnLoginState.kind === "applying"}
-                      onChange={(next) => void toggleStartMonitoringOnLogin(next)}
-                      status={<ApplyStatus state={monitoringOnLoginState} />}
-                    />
-                  )}
                   <SwitchField
                     label="Add “Add to AutoTidy” to the Explorer folder menu"
                     hint="Right-click any folder to start monitoring it or add it to the global exclusions. Registered for your account only — no administrator prompt."
@@ -1092,8 +1075,6 @@ interface SwitchFieldProps {
   onChange: (checked: boolean) => void;
   /** Extra line under the hint — used for the auto-save outcome. */
   status?: ReactNode;
-  /** Indented child row nested under a parent switch. */
-  sub?: boolean;
 }
 
 /**
@@ -1102,14 +1083,13 @@ interface SwitchFieldProps {
  * is backed by an explicit ON/OFF word. `role="switch"` on a native checkbox
  * keeps Space working and makes the state announceable.
  */
-function SwitchField({ label, hint, checked, disabled, onChange, status, sub }: SwitchFieldProps) {
+function SwitchField({ label, hint, checked, disabled, onChange, status }: SwitchFieldProps) {
   const id = useId();
   const hintId = `${id}hint`;
   return (
     <div
       className={
         "switchrow" +
-        (sub ? " switchrow--sub" : "") +
         (checked ? " switchrow--on" : "") +
         (disabled ? " switchrow--disabled" : "")
       }

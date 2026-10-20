@@ -47,7 +47,8 @@ const LOG_BACKUPS: u32 = 3;
 ///    menu passing `--add-folder` while the app *is* running) forwards its argv
 ///    to the running instance instead of racing it for `config.json`.
 /// 3. Logging, so everything after it is captured.
-/// 4. Config, tray, then the window — which starts hidden.
+/// 4. Config, tray, then the window — which starts hidden — and monitoring,
+///    if the user asked for it to start with the app.
 pub fn run() {
     let store = match ConfigStore::default_location() {
         Ok(store) => store,
@@ -205,26 +206,27 @@ pub fn run() {
     }
 }
 
-/// Whether the engine should be started immediately on app launch.
-pub(crate) fn should_start_monitoring(config: &autotidy_core::config::Config) -> bool {
-    config.settings.start_monitoring_on_login
-}
-
-/// If configured in settings, start monitoring automatically on startup.
+/// Start monitoring straight away when `start_monitoring_on_launch` is set,
+/// rather than leaving the app in the tray with the engine stopped.
+///
+/// Applies to every launch, sign-in included — the autostart entry carries no
+/// flag, so a sign-in launch is indistinguishable from any other. Called after
+/// `tray::setup` so the engine's first status change has a tray to update.
 fn start_monitoring_if_configured(app: &tauri::AppHandle) {
     let state = app.state::<AppState>();
-    match state.store.load() {
-        Ok(config) => {
-            if should_start_monitoring(&config) {
-                tracing::info!("starting monitoring automatically as configured in settings");
-                if let Err(err) = commands::start_engine(app, &state) {
-                    tracing::error!(%err, "failed to automatically start monitoring on startup");
-                }
-            }
-        }
+    let config = match state.store.load() {
+        Ok(config) => config,
         Err(err) => {
-            tracing::warn!(%err, "could not read config to check start_monitoring_on_login");
+            tracing::warn!(%err, "could not read the config; not starting monitoring at launch");
+            return;
         }
+    };
+    if !config.settings.start_monitoring_on_launch {
+        return;
+    }
+    tracing::info!("starting monitoring at launch, as configured");
+    if let Err(err) = commands::start_engine(app, &state) {
+        tracing::error!(%err, "could not start monitoring at launch");
     }
 }
 
@@ -983,14 +985,5 @@ mod tests {
         // `src/lib/types.ts` hardcodes this; a rename here would silently stop
         // every event reaching the UI.
         assert_eq!(ENGINE_EVENT, "autotidy://engine");
-    }
-
-    #[test]
-    fn should_start_monitoring_honors_setting() {
-        let mut config = autotidy_core::config::Config::default();
-        assert!(!should_start_monitoring(&config));
-
-        config.settings.start_monitoring_on_login = true;
-        assert!(should_start_monitoring(&config));
     }
 }
