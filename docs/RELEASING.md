@@ -35,7 +35,9 @@ free programme for open-source projects. One-time setup:
    - `Cargo.toml` (`workspace.package.version`)
    - `package.json`
    - `src-tauri/tauri.conf.json`
-2. Update `CITATION.cff` (`version` and `date-released`).
+2. Update `CITATION.cff` (`version` and `date-released`), the version badge in
+   `README.md`, and turn `CHANGELOG.md`'s *Unreleased* heading into the dated
+   version.
 3. Commit, tag `vX.Y.Z`, push the tag. That triggers
    [`release.yml`](../.github/workflows/release.yml).
 4. **Approve two signing requests** in the SignPath dashboard. The workflow
@@ -43,6 +45,14 @@ free programme for open-source projects. One-time setup:
 5. The workflow opens a **draft** release. Fill it in from
    [`RELEASE_TEMPLATE.md`](../.github/RELEASE_TEMPLATE.md), paste in the
    generated checksums, and publish.
+6. **Update the website.** autotidy.alpyalay.org links to the release files by
+   exact version, so it keeps offering the old release until you change
+   `VERSION`, `INSTALLER_SIZE` and `PORTABLE_SIZE` in
+   `components/autotidy/Buttons.tsx` in
+   [AlpWebsite](https://github.com/KhazP/AlpWebsite). Take the sizes from the
+   release page (GitHub's "MB" there is MiB), to one decimal. Keep the asset
+   names as the workflow produces them: renaming one on the release page
+   breaks the site's link to it.
 
 ### Why two approvals
 

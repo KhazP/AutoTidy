@@ -66,3 +66,8 @@ backup-untracked-*/
 # OS specific
 .DS_Store
 Thumbs.db
+
+# Release binaries. The release workflow stages them in a top-level release/
+# directory and publishes them to GitHub Releases; a copy committed here gets
+# swept into the next release's assets and SHA256SUMS.txt.
+/release/
