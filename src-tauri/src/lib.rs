@@ -179,6 +179,7 @@ pub fn run() {
 
             tray::setup(&handle)?;
             hide_on_close(&handle);
+            start_monitoring_if_configured(&handle);
             Ok(())
         })
         .build(tauri::generate_context!());
@@ -200,6 +201,29 @@ pub fn run() {
             tracing::error!(%err, "failed to start");
             eprintln!("AutoTidy failed to start: {err}");
             std::process::exit(1);
+        }
+    }
+}
+
+/// Whether the engine should be started immediately on app launch.
+pub(crate) fn should_start_monitoring(config: &autotidy_core::config::Config) -> bool {
+    config.settings.start_monitoring_on_login
+}
+
+/// If configured in settings, start monitoring automatically on startup.
+fn start_monitoring_if_configured(app: &tauri::AppHandle) {
+    let state = app.state::<AppState>();
+    match state.store.load() {
+        Ok(config) => {
+            if should_start_monitoring(&config) {
+                tracing::info!("starting monitoring automatically as configured in settings");
+                if let Err(err) = commands::start_engine(app, &state) {
+                    tracing::error!(%err, "failed to automatically start monitoring on startup");
+                }
+            }
+        }
+        Err(err) => {
+            tracing::warn!(%err, "could not read config to check start_monitoring_on_login");
         }
     }
 }
@@ -959,5 +983,14 @@ mod tests {
         // `src/lib/types.ts` hardcodes this; a rename here would silently stop
         // every event reaching the UI.
         assert_eq!(ENGINE_EVENT, "autotidy://engine");
+    }
+
+    #[test]
+    fn should_start_monitoring_honors_setting() {
+        let mut config = autotidy_core::config::Config::default();
+        assert!(!should_start_monitoring(&config));
+
+        config.settings.start_monitoring_on_login = true;
+        assert!(should_start_monitoring(&config));
     }
 }

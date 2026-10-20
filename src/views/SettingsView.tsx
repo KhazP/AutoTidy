@@ -140,6 +140,7 @@ export function SettingsView() {
   const [contextMenuOn, setContextMenuOn] = useState<boolean | null>(null);
   const [autostartState, setAutostartState] = useState<ApplyState>({ kind: "idle" });
   const [contextMenuState, setContextMenuState] = useState<ApplyState>({ kind: "idle" });
+  const [monitoringOnLoginState, setMonitoringOnLoginState] = useState<ApplyState>({ kind: "idle" });
 
   /** Leftovers from AutoTidy 1.x. `null` until detection has answered. */
   const [stale, setStale] = useState<StaleContextMenu | null>(null);
@@ -337,7 +338,11 @@ export function SettingsView() {
       await setAutostart(next);
       setAutostartOn(next);
       // Keep the config record in step with the OS state.
-      await patchSettings({ start_on_login: next });
+      // If autostart is disabled, also turn off auto-monitoring on login.
+      await patchSettings({
+        start_on_login: next,
+        ...(next ? {} : { start_monitoring_on_login: false }),
+      });
       const message = next ? "AutoTidy will start at login" : "Login startup disabled";
       setAutostartState({ kind: "applied", message, at: new Date() });
       push("success", message, "Saved — this one did not need the Save button.");
@@ -346,6 +351,22 @@ export function SettingsView() {
       setAutostartState({ kind: "failed", message });
       push("error", "Could not change the startup setting", message);
       await loadInfo();
+    }
+  }
+
+  async function toggleStartMonitoringOnLogin(next: boolean) {
+    setMonitoringOnLoginState({ kind: "applying" });
+    try {
+      await patchSettings({ start_monitoring_on_login: next });
+      const message = next
+        ? "Monitoring will start automatically on login"
+        : "Automatic monitoring on login disabled";
+      setMonitoringOnLoginState({ kind: "applied", message, at: new Date() });
+      push("success", message, "Saved — this one did not need the Save button.");
+    } catch (err) {
+      const message = errorMessage(err);
+      setMonitoringOnLoginState({ kind: "failed", message });
+      push("error", "Could not change the startup monitoring setting", message);
     }
   }
 
@@ -729,6 +750,17 @@ export function SettingsView() {
                     onChange={(next) => void toggleAutostart(next)}
                     status={<ApplyStatus state={autostartState} />}
                   />
+                  {autostartOn && (
+                    <SwitchField
+                      sub
+                      label="Start monitoring automatically on sign-in"
+                      hint="Runs an immediate scan and watches folders on schedule."
+                      checked={config?.settings.start_monitoring_on_login ?? false}
+                      disabled={monitoringOnLoginState.kind === "applying"}
+                      onChange={(next) => void toggleStartMonitoringOnLogin(next)}
+                      status={<ApplyStatus state={monitoringOnLoginState} />}
+                    />
+                  )}
                   <SwitchField
                     label="Add “Add to AutoTidy” to the Explorer folder menu"
                     hint="Right-click any folder to start monitoring it or add it to the global exclusions. Registered for your account only — no administrator prompt."
@@ -1060,6 +1092,8 @@ interface SwitchFieldProps {
   onChange: (checked: boolean) => void;
   /** Extra line under the hint — used for the auto-save outcome. */
   status?: ReactNode;
+  /** Indented child row nested under a parent switch. */
+  sub?: boolean;
 }
 
 /**
@@ -1068,13 +1102,14 @@ interface SwitchFieldProps {
  * is backed by an explicit ON/OFF word. `role="switch"` on a native checkbox
  * keeps Space working and makes the state announceable.
  */
-function SwitchField({ label, hint, checked, disabled, onChange, status }: SwitchFieldProps) {
+function SwitchField({ label, hint, checked, disabled, onChange, status, sub }: SwitchFieldProps) {
   const id = useId();
   const hintId = `${id}hint`;
   return (
     <div
       className={
         "switchrow" +
+        (sub ? " switchrow--sub" : "") +
         (checked ? " switchrow--on" : "") +
         (disabled ? " switchrow--disabled" : "")
       }

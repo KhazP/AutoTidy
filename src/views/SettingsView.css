@@ -120,6 +120,12 @@
   min-width: 0;
 }
 
+.switchrow--sub {
+  margin-left: var(--sp-4);
+  padding-left: var(--sp-3);
+  border-left: 2px solid var(--accent);
+}
+
 .switchlist .switchrow + .switchrow {
   border-top: 1px solid var(--border);
 }

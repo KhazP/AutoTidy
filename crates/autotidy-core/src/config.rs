@@ -289,6 +289,9 @@ fn default_true() -> bool {
 pub struct Settings {
     #[serde(default)]
     pub start_on_login: bool,
+    /// Automatically start monitoring when launched on Windows sign-in.
+    #[serde(default)]
+    pub start_monitoring_on_login: bool,
     #[serde(default = "default_archive_template")]
     pub archive_path_template: String,
     #[serde(default = "default_schedule_type")]
@@ -332,6 +335,7 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             start_on_login: false,
+            start_monitoring_on_login: false,
             archive_path_template: default_archive_template(),
             schedule_type: default_schedule_type(),
             interval_minutes: default_interval_minutes(),
@@ -868,5 +872,25 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(s.interval(), std::time::Duration::from_secs(60));
+    }
+
+    #[test]
+    fn start_monitoring_on_login_defaults_to_false() {
+        let s: Settings = serde_json::from_str("{}").unwrap();
+        assert!(!s.start_monitoring_on_login);
+
+        let default_settings = Settings::default();
+        assert!(!default_settings.start_monitoring_on_login);
+    }
+
+    #[test]
+    fn start_monitoring_on_login_round_trips() {
+        let raw = r#"{"start_monitoring_on_login": true}"#;
+        let s: Settings = serde_json::from_str(raw).unwrap();
+        assert!(s.start_monitoring_on_login);
+
+        let serialized = serde_json::to_string(&s).unwrap();
+        let s2: Settings = serde_json::from_str(&serialized).unwrap();
+        assert!(s2.start_monitoring_on_login);
     }
 }
