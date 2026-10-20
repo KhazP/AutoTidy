@@ -835,6 +835,7 @@ fn or_na(value: &str) -> &str {
 fn undo_verb(action_taken: &str) -> &'static str {
     match action_taken {
         "COPIED" => "UNDO_COPY",
+        "DELETE_EMPTY_FOLDER" => "UNDO_DELETE_EMPTY_FOLDER",
         _ => "UNDO_MOVE",
     }
 }
@@ -857,11 +858,15 @@ fn log_undo(log: &HistoryLog, source: &HistoryRecord, message: &str) {
 /// `destination_path` is where it ended up. A reversed copy has no destination
 /// — the copy was deleted, and the original never moved.
 fn undo_record(source: &HistoryRecord, message: &str) -> HistoryRecord {
-    let archived = source.destination_path.clone().unwrap_or_default();
-    let restored = if source.action_taken == "COPIED" {
-        None
+    let (archived, restored) = if source.action_taken == "COPIED" {
+        (source.destination_path.clone().unwrap_or_default(), None)
+    } else if source.action_taken == "DELETE_EMPTY_FOLDER" {
+        (source.original_path.clone(), None)
     } else {
-        Some(source.original_path.clone())
+        (
+            source.destination_path.clone().unwrap_or_default(),
+            Some(source.original_path.clone()),
+        )
     };
 
     HistoryRecord {
@@ -1266,6 +1271,7 @@ mod tests {
     fn undo_verb_defaults_to_move_for_unknown_actions() {
         assert_eq!(undo_verb("MOVED"), "UNDO_MOVE");
         assert_eq!(undo_verb("COPIED"), "UNDO_COPY");
+        assert_eq!(undo_verb("DELETE_EMPTY_FOLDER"), "UNDO_DELETE_EMPTY_FOLDER");
         assert_eq!(undo_verb("SOMETHING_ELSE"), "UNDO_MOVE");
     }
 

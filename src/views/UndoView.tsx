@@ -107,10 +107,13 @@ export function UndoView() {
   const blastRadius = useMemo(() => {
     let moves = 0;
     let copies = 0;
+    let folders = 0;
     const reasons = new Map<string, number>();
     for (const entry of annotated) {
       if (entry.undoable) {
-        if (entry.record.action_taken.toUpperCase() === "COPIED") copies += 1;
+        const act = entry.record.action_taken.toUpperCase();
+        if (act === "COPIED") copies += 1;
+        else if (act === "DELETE_EMPTY_FOLDER") folders += 1;
         else moves += 1;
       } else {
         reasons.set(entry.reason, (reasons.get(entry.reason) ?? 0) + 1);
@@ -119,6 +122,7 @@ export function UndoView() {
     return {
       moves,
       copies,
+      folders,
       reasons: [...reasons.entries()].map(([reason, count]) => ({ reason, count })),
     };
   }, [annotated]);
@@ -154,6 +158,9 @@ export function UndoView() {
     }
     if (blastRadius.copies > 0) {
       parts.push(`${pluralise(blastRadius.copies, "copy", "copies")} deleted`);
+    }
+    if (blastRadius.folders > 0) {
+      parts.push(`${pluralise(blastRadius.folders, "empty folder")} recreated`);
     }
 
     openConfirm({
@@ -231,7 +238,9 @@ export function UndoView() {
   }
 
   function confirmUndoOne(record: HistoryRecord) {
-    const isCopy = record.action_taken.toUpperCase() === "COPIED";
+    const act = record.action_taken.toUpperCase();
+    const isCopy = act === "COPIED";
+    const isFolder = act === "DELETE_EMPTY_FOLDER";
     openConfirm({
       title: "Undo this action?",
       tone: "danger",
@@ -253,7 +262,9 @@ export function UndoView() {
             <dd>
               {isCopy
                 ? "The copy is deleted, but only after AutoTidy verifies its size and timestamp still match what was recorded. The original is untouched either way."
-                : "The file is moved back to its original location. If something already exists there, the move is refused rather than overwriting it."}
+                : isFolder
+                  ? "The deleted empty folder is recreated at its original path."
+                  : "The file is moved back to its original location. If something already exists there, the move is refused rather than overwriting it."}
             </dd>
             <dt>If it fails</dt>
             <dd>

@@ -336,6 +336,9 @@ export function undoability(actionTaken: string, status: string): {
   }
   if (action === "MOVED") return { undoable: true, reason: "Moves the file back to its original path." };
   if (action === "COPIED") return { undoable: true, reason: "Deletes the copy, after verifying it is unchanged." };
+  if (action === "DELETE_EMPTY_FOLDER") {
+    return { undoable: true, reason: "Recreates the deleted empty folder." };
+  }
   if (action.startsWith("SIMULATED")) {
     return { undoable: false, reason: "Dry run — nothing happened on disk, so there is nothing to undo." };
   }
