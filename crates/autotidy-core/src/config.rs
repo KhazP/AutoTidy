@@ -289,6 +289,11 @@ fn default_true() -> bool {
 pub struct Settings {
     #[serde(default)]
     pub start_on_login: bool,
+    /// Start monitoring as soon as the app launches, instead of waiting in the
+    /// tray for the user to press Start. Covers every launch, sign-in included:
+    /// nothing tells the app which kind of launch it is.
+    #[serde(default)]
+    pub start_monitoring_on_launch: bool,
     #[serde(default = "default_archive_template")]
     pub archive_path_template: String,
     #[serde(default = "default_schedule_type")]
@@ -332,6 +337,7 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             start_on_login: false,
+            start_monitoring_on_launch: false,
             archive_path_template: default_archive_template(),
             schedule_type: default_schedule_type(),
             interval_minutes: default_interval_minutes(),
@@ -868,5 +874,27 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(s.interval(), std::time::Duration::from_secs(60));
+    }
+
+    #[test]
+    fn start_monitoring_on_launch_defaults_to_false() {
+        // An upgraded config predates the key; it must not start monitoring
+        // behind the user's back.
+        let upgraded: Config = serde_json::from_str(REAL_CONFIG).unwrap();
+        assert!(!upgraded.settings.start_monitoring_on_launch);
+
+        let default_settings = Settings::default();
+        assert!(!default_settings.start_monitoring_on_launch);
+    }
+
+    #[test]
+    fn start_monitoring_on_launch_round_trips() {
+        let raw = r#"{"start_monitoring_on_launch": true}"#;
+        let s: Settings = serde_json::from_str(raw).unwrap();
+        assert!(s.start_monitoring_on_launch);
+
+        let serialized = serde_json::to_string(&s).unwrap();
+        let s2: Settings = serde_json::from_str(&serialized).unwrap();
+        assert!(s2.start_monitoring_on_launch);
     }
 }

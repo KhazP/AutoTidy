@@ -47,7 +47,8 @@ const LOG_BACKUPS: u32 = 3;
 ///    menu passing `--add-folder` while the app *is* running) forwards its argv
 ///    to the running instance instead of racing it for `config.json`.
 /// 3. Logging, so everything after it is captured.
-/// 4. Config, tray, then the window — which starts hidden.
+/// 4. Config, tray, then the window — which starts hidden — and monitoring,
+///    if the user asked for it to start with the app.
 pub fn run() {
     let store = match ConfigStore::default_location() {
         Ok(store) => store,
@@ -179,6 +180,7 @@ pub fn run() {
 
             tray::setup(&handle)?;
             hide_on_close(&handle);
+            start_monitoring_if_configured(&handle);
             Ok(())
         })
         .build(tauri::generate_context!());
@@ -201,6 +203,30 @@ pub fn run() {
             eprintln!("AutoTidy failed to start: {err}");
             std::process::exit(1);
         }
+    }
+}
+
+/// Start monitoring straight away when `start_monitoring_on_launch` is set,
+/// rather than leaving the app in the tray with the engine stopped.
+///
+/// Applies to every launch, sign-in included — the autostart entry carries no
+/// flag, so a sign-in launch is indistinguishable from any other. Called after
+/// `tray::setup` so the engine's first status change has a tray to update.
+fn start_monitoring_if_configured(app: &tauri::AppHandle) {
+    let state = app.state::<AppState>();
+    let config = match state.store.load() {
+        Ok(config) => config,
+        Err(err) => {
+            tracing::warn!(%err, "could not read the config; not starting monitoring at launch");
+            return;
+        }
+    };
+    if !config.settings.start_monitoring_on_launch {
+        return;
+    }
+    tracing::info!("starting monitoring at launch, as configured");
+    if let Err(err) = commands::start_engine(app, &state) {
+        tracing::error!(%err, "could not start monitoring at launch");
     }
 }
 

@@ -16,6 +16,7 @@ import type { Action, Config, NotificationLevel, Rule, RuleTemplate, Settings } 
 /** Mirrors `Settings::default()` in autotidy-core / 1.5.0's ConfigManager. */
 export const DEFAULT_SETTINGS: Settings = {
   start_on_login: false,
+  start_monitoring_on_launch: false,
   archive_path_template: "_Cleanup/{YYYY}-{MM}-{DD}",
   schedule_type: "interval",
   interval_minutes: 60,

@@ -53,6 +53,7 @@ import "./SettingsView.css";
  * heard of survive untouched.
  */
 interface SettingsDraft {
+  start_monitoring_on_launch: boolean;
   schedule_type: string;
   interval_minutes: number;
   dry_run_mode: boolean;
@@ -63,6 +64,7 @@ interface SettingsDraft {
 }
 
 const DRAFT_KEYS: Array<keyof SettingsDraft> = [
+  "start_monitoring_on_launch",
   "schedule_type",
   "interval_minutes",
   "dry_run_mode",
@@ -74,6 +76,7 @@ const DRAFT_KEYS: Array<keyof SettingsDraft> = [
 
 /** Used by the danger-zone confirmation, so it can name each field it resets. */
 const DRAFT_LABELS: Record<keyof SettingsDraft, string> = {
+  start_monitoring_on_launch: "Start monitoring when AutoTidy starts",
   schedule_type: "Schedule type",
   interval_minutes: "Interval (minutes)",
   dry_run_mode: "Dry run mode",
@@ -84,6 +87,7 @@ const DRAFT_LABELS: Record<keyof SettingsDraft, string> = {
 };
 
 const DEFAULT_DRAFT: SettingsDraft = {
+  start_monitoring_on_launch: DEFAULT_SETTINGS.start_monitoring_on_launch,
   schedule_type: DEFAULT_SETTINGS.schedule_type,
   interval_minutes: DEFAULT_SETTINGS.interval_minutes,
   dry_run_mode: DEFAULT_SETTINGS.dry_run_mode,
@@ -95,6 +99,7 @@ const DEFAULT_DRAFT: SettingsDraft = {
 
 function draftFromSettings(s: Settings): SettingsDraft {
   return {
+    start_monitoring_on_launch: s.start_monitoring_on_launch,
     schedule_type: s.schedule_type,
     interval_minutes: s.interval_minutes,
     dry_run_mode: s.dry_run_mode,
@@ -539,6 +544,16 @@ export function SettingsView() {
           {/* --------------------------------------------------- scheduling */}
           <fieldset className="fieldset">
             <legend>Scheduling</legend>
+            <SwitchField
+              label="Start monitoring when AutoTidy starts"
+              hint={
+                draft.start_monitoring_on_launch
+                  ? "Scans straight away, then on the interval below — including after you sign in, if AutoTidy is set to start then."
+                  : "AutoTidy opens in the tray with monitoring off, and waits for you to press Start monitoring."
+              }
+              checked={draft.start_monitoring_on_launch}
+              onChange={(start_monitoring_on_launch) => patchDraft({ start_monitoring_on_launch })}
+            />
             <div className="grid-2">
               <Field
                 label="Schedule type"
