@@ -631,6 +631,13 @@ export function RuleEditor({
               </details>
             )}
 
+            <Toggle
+              label="Delete empty folders"
+              hint="After files are organized, automatically remove subfolders in this location that are left empty."
+              checked={Boolean(draft.delete_empty_folders)}
+              onChange={(delete_empty_folders) => onChange({ delete_empty_folders })}
+            />
+
             <div className="btn-row">
               <button type="button" className="btn" onClick={() => void runPreview()}>
                 <IconEye />
