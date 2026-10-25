@@ -143,10 +143,25 @@ pub fn undo_action(record: &HistoryRecord) -> Result<String, UndoError> {
     match record.action_taken.as_str() {
         "MOVED" => undo_move(record),
         "COPIED" => undo_copy(record),
+        "DELETE_EMPTY_FOLDER" => undo_delete_empty_folder(record),
         // Trashing is platform-specific to reverse and permanent deletion is
         // gone for good; say so rather than reporting a hollow success.
         other => Err(UndoError::Unsupported(other.to_string())),
     }
+}
+
+/// Recreate an empty folder that was removed by a rule.
+fn undo_delete_empty_folder(record: &HistoryRecord) -> Result<String, UndoError> {
+    let original = non_empty(Some(record.original_path.as_str())).ok_or(UndoError::MissingPaths)?;
+    let path = Path::new(original);
+    if path.exists() {
+        return Ok(format!("Folder already exists: {}", path.display()));
+    }
+    fs::create_dir_all(path)?;
+    Ok(format!(
+        "Successfully recreated empty folder: {}",
+        path.display()
+    ))
 }
 
 /// Put a moved file back where it came from.
@@ -696,6 +711,46 @@ mod tests {
             );
         }
         assert!(original.exists(), "an unsupported undo must touch nothing");
+    }
+
+    // ---- delete empty folder ---------------------------------------------
+
+    #[test]
+    fn delete_empty_folder_undo_recreates_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let deleted_sub = dir.path().join("sub").join("nested");
+        assert!(!deleted_sub.exists());
+
+        let rec = record(
+            "DELETE_EMPTY_FOLDER",
+            &deleted_sub,
+            None,
+            "run-undo-folder",
+            "2025-01-01T00:00:00+00:00",
+        );
+
+        let msg = undo_action(&rec).expect("undo must succeed");
+        assert!(deleted_sub.is_dir(), "directory must be recreated");
+        assert!(msg.contains("recreated"));
+    }
+
+    #[test]
+    fn delete_empty_folder_undo_tolerates_already_existing_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let existing_sub = dir.path().join("existing");
+        fs::create_dir_all(&existing_sub).unwrap();
+
+        let rec = record(
+            "DELETE_EMPTY_FOLDER",
+            &existing_sub,
+            None,
+            "run-undo-folder-exist",
+            "2025-01-01T00:00:00+00:00",
+        );
+
+        let msg = undo_action(&rec).expect("undo must succeed even if folder exists");
+        assert!(existing_sub.is_dir());
+        assert!(msg.contains("already exists") || msg.contains("recreated"));
     }
 
     // ---- run listing -----------------------------------------------------

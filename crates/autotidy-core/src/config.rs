@@ -227,6 +227,8 @@ pub struct Rule {
     pub exclusions: Vec<String>,
     #[serde(default = "default_true")]
     pub enabled: bool,
+    #[serde(default)]
+    pub delete_empty_folders: bool,
 
     /// Keys written by other//future versions, round-tripped untouched.
     #[serde(flatten)]
@@ -246,6 +248,7 @@ impl Rule {
             destination_folder: String::new(),
             exclusions: Vec::new(),
             enabled: true,
+            delete_empty_folders: false,
             extra: Map::new(),
         }
     }
@@ -774,6 +777,16 @@ mod tests {
         assert!(!rule.use_regex);
         assert_eq!(rule.age_days, 0);
         assert!(rule.exclusions.is_empty());
+        assert!(!rule.delete_empty_folders);
+    }
+
+    #[test]
+    fn delete_empty_folders_round_trips() {
+        let json = r#"{"path": "C:/x", "delete_empty_folders": true}"#;
+        let rule: Rule = serde_json::from_str(json).unwrap();
+        assert!(rule.delete_empty_folders);
+        let serialized = serde_json::to_string(&rule).unwrap();
+        assert!(serialized.contains(r#""delete_empty_folders":true"#));
     }
 
     #[test]
