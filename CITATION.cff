@@ -2,8 +2,8 @@ cff-version: 1.2.0
 title: AutoTidy
 message: "If you use AutoTidy in your work, please cite this software."
 type: software
-version: 2.1.0
-date-released: 2026-10-20
+version: 2.2.0
+date-released: 2026-10-25
 license: MPL-2.0
 authors:
   - name: AutoTidy Contributors
