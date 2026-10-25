@@ -5,6 +5,19 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [2.2.0] — 2026-10-25
+
+### Added
+
+- **Delete empty folders.** A new per-rule switch, "Delete empty folders",
+  removes subfolders of the monitored folder that are empty after a scan —
+  including ones a rule just emptied. Works deepest-first, never touches the
+  monitored folder itself, destination folders or excluded folders, respects
+  the recursion depth and dry runs, and can be undone from the Undo view (the
+  folders are recreated). Off by default. Thanks to @macxq (#77).
+
+---
+
 ## [2.1.0] — 2026-10-20
 
 ### Added

@@ -10,7 +10,7 @@ and it keeps them tidy in the background.
 
 **[autotidy.alpyalay.org](https://autotidy.alpyalay.org)**
 
-[![Version](https://img.shields.io/badge/version-2.1.0-1f6feb?style=flat-square)](Cargo.toml)
+[![Version](https://img.shields.io/badge/version-2.2.0-1f6feb?style=flat-square)](Cargo.toml)
 [![Rust](https://img.shields.io/badge/Rust-2021-b7410e?style=flat-square&logo=rust&logoColor=white)](crates/)
 [![Tauri](https://img.shields.io/badge/Tauri-2-24c8db?style=flat-square&logo=tauri&logoColor=white)](src-tauri/)
 [![License](https://img.shields.io/badge/license-MPL--2.0-blue?style=flat-square)](LICENSE)
